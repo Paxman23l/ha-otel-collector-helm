@@ -1,0 +1,20 @@
+apiVersion: v2
+name: otel-collector
+description: OpenTelemetry Collector on GKE - DaemonSet (edge) publishing to NATS/OTLP and downstream collector exporting to GCP and ClickHouse
+type: application
+version: 0.1.0
+appVersion: "0.99.0"
+keywords:
+  - opentelemetry
+  - otel
+  - observability
+  - gke
+  - nats
+  - clickhouse
+  - gcp
+home: https://opentelemetry.io/
+sources:
+  - https://github.com/open-telemetry/opentelemetry-collector-contrib
+maintainers:
+  - name: Maintainer
+    email: maintainer@example.com

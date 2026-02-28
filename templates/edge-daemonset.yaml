@@ -1,0 +1,86 @@
+{{- if .Values.edge.enabled }}
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "otel-collector.edgeFullname" . }}
+  labels:
+    {{- include "otel-collector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: edge
+spec:
+  selector:
+    matchLabels:
+      {{- include "otel-collector.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: edge
+  template:
+    metadata:
+      labels:
+        {{- include "otel-collector.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: edge
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.edge.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "otel-collector.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: otel-collector
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - "--config=/etc/otel/config.yaml"
+          ports:
+            - name: otlp-grpc
+              containerPort: 4317
+              protocol: TCP
+            - name: otlp-http
+              containerPort: 4318
+              protocol: TCP
+            - name: telemetry
+              containerPort: 8888
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8888
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8888
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          {{- if gt (int .Values.edge.preStopSleepSeconds) 0 }}
+          lifecycle:
+            preStop:
+              exec:
+                command: ["/bin/sh", "-c", "sleep {{ .Values.edge.preStopSleepSeconds }}"]
+          {{- end }}
+          resources:
+            {{- toYaml .Values.edge.resources | nindent 12 }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/otel
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "otel-collector.edgeFullname" . }}
+      {{- with .Values.edge.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.edge.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.edge.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

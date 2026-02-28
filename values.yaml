@@ -1,0 +1,151 @@
+# Default values for otel-collector (GKE: DaemonSet -> NATS/OTLP, downstream -> GCP + ClickHouse)
+
+nameOverride: ""
+fullnameOverride: ""
+
+# -- OTel Collector Contrib image (includes GCP, ClickHouse, etc.)
+image:
+  repository: otel/opentelemetry-collector-contrib
+  pullPolicy: IfNotPresent
+  tag: "0.99.0"
+
+imagePullSecrets: []
+
+# -- Edge collector runs as DaemonSet on every node; receives OTLP and publishes to queue (NATS/Kafka) or OTLP
+edge:
+  enabled: true
+  # Queue/transport: "otlp" (direct to downstream), "nats", or "kafka"
+  queueBackend: "otlp"
+  nats:
+    url: "nats://nats.nats.svc.cluster.local:4222"
+    traces:
+      subject: "telemetry.traces"
+      encoding: "otlp_proto"
+    metrics:
+      subject: "telemetry.metrics"
+      encoding: "otlp_proto"
+    logs:
+      subject: "telemetry.logs"
+      encoding: "otlp_proto"
+  kafka:
+    brokers:
+      - "kafka.kafka.svc.cluster.local:9092"
+    protocolVersion: "2.0.0"
+    traces:
+      topic: "telemetry.traces"
+      encoding: "otlp_proto"
+    metrics:
+      topic: "telemetry.metrics"
+      encoding: "otlp_proto"
+    logs:
+      topic: "telemetry.logs"
+      encoding: "otlp_proto"
+  # Downstream collector service (used when queueBackend is "otlp"). Leave empty to use internal service name.
+  downstreamEndpoint: ""
+
+  # Graceful shutdown: time allowed to flush in-memory queue to Kafka/OTLP before pod is killed
+  terminationGracePeriodSeconds: 90
+  # preStop sleep so pod is removed from Service endpoints before SIGTERM; gives collector time to drain
+  preStopSleepSeconds: 15
+
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+  tolerations: []
+  nodeSelector: {}
+  affinity: {}
+
+# -- Downstream collector: receives from NATS/OTLP, exports to GCP and ClickHouse
+downstream:
+  enabled: true
+  replicas: 2
+
+  # Receive from NATS (when edge.queueBackend is "nats"). NATS receiver not yet in upstream contrib.
+  useNatsReceiver: false
+  nats:
+    url: "nats://nats.nats.svc.cluster.local:4222"
+    tracesSubject: "telemetry.traces"
+    metricsSubject: "telemetry.metrics"
+    logsSubject: "telemetry.logs"
+
+  # Receive from Kafka (when edge.queueBackend is "kafka"). Uses kafka receiver from contrib.
+  useKafkaReceiver: false
+  kafka:
+    brokers:
+      - "kafka.kafka.svc.cluster.local:9092"
+    protocolVersion: "2.0.0"
+    groupId: "otel-collector-downstream"
+    traces:
+      topic: "telemetry.traces"
+      encoding: "otlp_proto"
+    metrics:
+      topic: "telemetry.metrics"
+      encoding: "otlp_proto"
+    logs:
+      topic: "telemetry.logs"
+      encoding: "otlp_proto"
+
+  # GCP (Cloud Trace, Cloud Monitoring, Cloud Logging)
+  gcp:
+    enabled: true
+    project: ""  # set or leave empty for default project (GKE workload identity)
+    # Credentials: use workload identity on GKE; or set path to key JSON
+    credentialsFile: ""
+
+  # ClickHouse
+  clickhouse:
+    enabled: true
+    endpoint: "tcp://clickhouse.clickhouse.svc.cluster.local:9000"
+    database: "otel"
+    # Optional: create tables (requires DDL; set to false if DB is managed elsewhere)
+    createSchema: true
+
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 200m
+      memory: 256Mi
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# -- Service account for GCP (Workload Identity on GKE)
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+  # Example for GKE Workload Identity:
+  # annotations:
+  #   iam.gke.io/gcp-service-account: my-gcp-sa@my-project.iam.gserviceaccount.com
+
+# -- Pod security
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  fsGroup: 10001
+
+securityContext:
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 10001
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+
+# -- Extra env for downstream (e.g. GOOGLE_APPLICATION_CREDENTIALS)
+extraEnv: []
+#  - name: GOOGLE_APPLICATION_CREDENTIALS
+#    value: /var/run/secrets/gcp/credentials.json
+
+# -- Extra volumes for downstream (e.g. GCP key)
+extraVolumes: []
+extraVolumeMounts: []

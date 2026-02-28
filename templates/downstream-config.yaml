@@ -1,0 +1,95 @@
+# Downstream collector: receives from OTLP (or NATS), exports to GCP and ClickHouse
+{{- if .Values.downstream.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "otel-collector.downstreamFullname" . }}
+  labels:
+    {{- include "otel-collector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: downstream
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+      {{- if .Values.downstream.useNatsReceiver }}
+      # NATS receiver (when available in contrib)
+      nats:
+        server_url: {{ .Values.downstream.nats.url | quote }}
+        traces:
+          subject: {{ .Values.downstream.nats.tracesSubject | quote }}
+        metrics:
+          subject: {{ .Values.downstream.nats.metricsSubject | quote }}
+        logs:
+          subject: {{ .Values.downstream.nats.logsSubject | quote }}
+      {{- end }}
+      {{- if .Values.downstream.useKafkaReceiver }}
+      # Kafka receiver (consumes from topics produced by edge when queueBackend is kafka)
+      kafka_traces:
+        protocol_version: {{ .Values.downstream.kafka.protocolVersion | quote }}
+        brokers: {{ toJson .Values.downstream.kafka.brokers }}
+        topic: {{ .Values.downstream.kafka.traces.topic | quote }}
+        encoding: {{ .Values.downstream.kafka.traces.encoding | quote }}
+        group_id: {{ .Values.downstream.kafka.groupId | quote }}
+      kafka_metrics:
+        protocol_version: {{ .Values.downstream.kafka.protocolVersion | quote }}
+        brokers: {{ toJson .Values.downstream.kafka.brokers }}
+        topic: {{ .Values.downstream.kafka.metrics.topic | quote }}
+        encoding: {{ .Values.downstream.kafka.metrics.encoding | quote }}
+        group_id: {{ .Values.downstream.kafka.groupId | quote }}
+      kafka_logs:
+        protocol_version: {{ .Values.downstream.kafka.protocolVersion | quote }}
+        brokers: {{ toJson .Values.downstream.kafka.brokers }}
+        topic: {{ .Values.downstream.kafka.logs.topic | quote }}
+        encoding: {{ .Values.downstream.kafka.logs.encoding | quote }}
+        group_id: {{ .Values.downstream.kafka.groupId | quote }}
+      {{- end }}
+
+    processors:
+      batch:
+        timeout: 10s
+        send_batch_size: 10000
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 1500
+        spike_limit_mib: 512
+
+    exporters:
+      {{- if .Values.downstream.gcp.enabled }}
+      googlecloud:
+        project: {{ .Values.downstream.gcp.project | quote }}
+        {{- if .Values.downstream.gcp.credentialsFile }}
+        credentials_file: {{ .Values.downstream.gcp.credentialsFile | quote }}
+        {{- end }}
+      {{- end }}
+      {{- if .Values.downstream.clickhouse.enabled }}
+      clickhouse:
+        endpoint: {{ .Values.downstream.clickhouse.endpoint | quote }}
+        database: {{ .Values.downstream.clickhouse.database | quote }}
+        create_schema: {{ .Values.downstream.clickhouse.createSchema }}
+      {{- end }}
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp{{ if .Values.downstream.useNatsReceiver }}, nats{{ end }}{{ if .Values.downstream.useKafkaReceiver }}, kafka_traces{{ end }}]
+          processors: [memory_limiter, batch]
+          exporters: [{{ if and .Values.downstream.gcp.enabled .Values.downstream.clickhouse.enabled }}googlecloud, clickhouse{{ else }}{{ if .Values.downstream.gcp.enabled }}googlecloud{{ end }}{{ if .Values.downstream.clickhouse.enabled }}clickhouse{{ end }}{{ end }}]
+        metrics:
+          receivers: [otlp{{ if .Values.downstream.useNatsReceiver }}, nats{{ end }}{{ if .Values.downstream.useKafkaReceiver }}, kafka_metrics{{ end }}]
+          processors: [memory_limiter, batch]
+          exporters: [{{ if and .Values.downstream.gcp.enabled .Values.downstream.clickhouse.enabled }}googlecloud, clickhouse{{ else }}{{ if .Values.downstream.gcp.enabled }}googlecloud{{ end }}{{ if .Values.downstream.clickhouse.enabled }}clickhouse{{ end }}{{ end }}]
+        logs:
+          receivers: [otlp{{ if .Values.downstream.useNatsReceiver }}, nats{{ end }}{{ if .Values.downstream.useKafkaReceiver }}, kafka_logs{{ end }}]
+          processors: [memory_limiter, batch]
+          exporters: [{{ if and .Values.downstream.gcp.enabled .Values.downstream.clickhouse.enabled }}googlecloud, clickhouse{{ else }}{{ if .Values.downstream.gcp.enabled }}googlecloud{{ end }}{{ if .Values.downstream.clickhouse.enabled }}clickhouse{{ end }}{{ end }}]
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          address: 0.0.0.0:8888
+{{- end }}

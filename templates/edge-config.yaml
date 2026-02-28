@@ -1,0 +1,85 @@
+# Edge collector: receives OTLP from nodes, exports to NATS, Kafka, or downstream OTLP
+{{- if .Values.edge.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "otel-collector.edgeFullname" . }}
+  labels:
+    {{- include "otel-collector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: edge
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+
+    processors:
+      batch:
+        timeout: 5s
+        send_batch_size: 10000
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 400
+        spike_limit_mib: 128
+
+    exporters:
+      {{- if eq .Values.edge.queueBackend "nats" }}
+      # NATS exporter (proposed in contrib; use custom collector image if not yet available)
+      nats:
+        server_url: {{ .Values.edge.nats.url | quote }}
+        traces:
+          subject: {{ .Values.edge.nats.traces.subject | quote }}
+          encoding: {{ .Values.edge.nats.traces.encoding | quote }}
+        metrics:
+          subject: {{ .Values.edge.nats.metrics.subject | quote }}
+          encoding: {{ .Values.edge.nats.metrics.encoding | quote }}
+        logs:
+          subject: {{ .Values.edge.nats.logs.subject | quote }}
+          encoding: {{ .Values.edge.nats.logs.encoding | quote }}
+      {{- else if eq .Values.edge.queueBackend "kafka" }}
+      kafka_traces:
+        protocol_version: {{ .Values.edge.kafka.protocolVersion | quote }}
+        brokers: {{ toJson .Values.edge.kafka.brokers }}
+        topic: {{ .Values.edge.kafka.traces.topic | quote }}
+        encoding: {{ .Values.edge.kafka.traces.encoding | quote }}
+      kafka_metrics:
+        protocol_version: {{ .Values.edge.kafka.protocolVersion | quote }}
+        brokers: {{ toJson .Values.edge.kafka.brokers }}
+        topic: {{ .Values.edge.kafka.metrics.topic | quote }}
+        encoding: {{ .Values.edge.kafka.metrics.encoding | quote }}
+      kafka_logs:
+        protocol_version: {{ .Values.edge.kafka.protocolVersion | quote }}
+        brokers: {{ toJson .Values.edge.kafka.brokers }}
+        topic: {{ .Values.edge.kafka.logs.topic | quote }}
+        encoding: {{ .Values.edge.kafka.logs.encoding | quote }}
+      {{- else }}
+      otlphttp:
+        endpoint: {{ include "otel-collector.downstreamOtlpEndpoint" . | quote }}
+        tls:
+          insecure: true
+      {{- end }}
+
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [{{ include "otel-collector.edgeTracesExporter" . }}]
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [{{ include "otel-collector.edgeMetricsExporter" . }}]
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [{{ include "otel-collector.edgeLogsExporter" . }}]
+      telemetry:
+        logs:
+          level: info
+        metrics:
+          address: 0.0.0.0:8888
+{{- end }}
