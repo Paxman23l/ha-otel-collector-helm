@@ -63,6 +63,13 @@ spec:
             {{- toYaml .Values.edge.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- if and .Values.edge.persistentQueue.enabled .Values.edge.persistentQueue.pvc.enabled }}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          {{- end }}
           volumeMounts:
             - name: config
               mountPath: /etc/otel
@@ -70,6 +77,9 @@ spec:
             {{- if .Values.edge.persistentQueue.enabled }}
             - name: queue
               mountPath: {{ .Values.edge.persistentQueue.directory }}
+              {{- if .Values.edge.persistentQueue.pvc.enabled }}
+              subPathExpr: $(POD_NAME)
+              {{- end }}
             {{- end }}
       volumes:
         - name: config
@@ -77,7 +87,12 @@ spec:
             name: {{ include "otel-collector.edgeFullname" . }}
         {{- if .Values.edge.persistentQueue.enabled }}
         - name: queue
+          {{- if .Values.edge.persistentQueue.pvc.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.edge.persistentQueue.pvc.existingClaim | default (printf "%s-queue" (include "otel-collector.edgeFullname" .)) }}
+          {{- else }}
           emptyDir: {}
+          {{- end }}
         {{- end }}
       {{- with .Values.edge.nodeSelector }}
       nodeSelector:

@@ -1,0 +1,18 @@
+{{- if and .Values.edge.enabled .Values.edge.persistentQueue.enabled .Values.edge.persistentQueue.pvc.enabled (not .Values.edge.persistentQueue.pvc.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "otel-collector.edgeFullname" . }}-queue
+  labels:
+    {{- include "otel-collector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: edge
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: {{ .Values.edge.persistentQueue.pvc.size | quote }}
+  {{- if .Values.edge.persistentQueue.pvc.storageClassName }}
+  storageClassName: {{ .Values.edge.persistentQueue.pvc.storageClassName | quote }}
+  {{- end }}
+{{- end }}

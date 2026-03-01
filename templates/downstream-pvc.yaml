@@ -1,0 +1,22 @@
+{{- if and .Values.downstream.enabled .Values.downstream.persistentQueue.enabled .Values.downstream.persistentQueue.pvc.enabled (not .Values.downstream.persistentQueue.pvc.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "otel-collector.downstreamFullname" . }}-queue
+  labels:
+    {{- include "otel-collector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: downstream
+spec:
+  accessModes:
+    {{- if gt (int .Values.downstream.replicas) 1 }}
+    - ReadWriteMany
+    {{- else }}
+    - ReadWriteOnce
+    {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.downstream.persistentQueue.pvc.size | quote }}
+  {{- if .Values.downstream.persistentQueue.pvc.storageClassName }}
+  storageClassName: {{ .Values.downstream.persistentQueue.pvc.storageClassName | quote }}
+  {{- end }}
+{{- end }}

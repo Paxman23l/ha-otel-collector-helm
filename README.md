@@ -100,8 +100,9 @@ When using Kafka, the edge exporter sets **`partition_traces_by_id: true`** (con
 
 By default, both edge and downstream use a **disk-backed exporter queue** (OpenTelemetry `filestorage` extension + `sending_queue.storage`). Data in the exporter queue is written to a volume so it can survive pod restarts and be retried after crash recovery.
 
-- **Edge:** `edge.persistentQueue.enabled` (default: true), `edge.persistentQueue.directory` (default: `/var/lib/otelcol/queue`), `edge.persistentQueue.queueSize` (default: 5000). Uses an `emptyDir` volume; data survives container restarts but is lost if the pod is evicted. For durability across pod replacement, use Kafka between edge and downstream.
-- **Downstream:** `downstream.persistentQueue.enabled`, `downstream.persistentQueue.directory`, `downstream.persistentQueue.queueSize` (same defaults). Same `emptyDir` behavior.
+- **Edge:** `edge.persistentQueue.enabled` (default: true), `edge.persistentQueue.directory` (default: `/var/lib/otelcol/queue`), `edge.persistentQueue.queueSize` (default: 5000). Uses an `emptyDir` volume by default; data survives container restarts but is lost if the pod is evicted. For durability across pod replacement, use Kafka between edge and downstream, or enable **`edge.persistentQueue.pvc.enabled`** with a **ReadWriteMany** storage class (each DaemonSet pod uses a subdir named by pod name).
+- **Downstream:** `downstream.persistentQueue.enabled`, `downstream.persistentQueue.directory`, `downstream.persistentQueue.queueSize` (same defaults). Same `emptyDir` behavior by default. Enable **`downstream.persistentQueue.pvc.enabled`** to use a PVC so the queue survives pod eviction; with replicas > 1 use a **ReadWriteMany** storage class (each replica uses a subdir by pod name).
+- **PVC options:** When `persistentQueue.pvc.enabled` is true, set `pvc.size` (e.g. `10Gi`), optional `pvc.storageClassName`, and optionally `pvc.existingClaim` to use an existing PVC instead of creating one. The chart creates a PVC if `existingClaim` is not set.
 - To disable: set `edge.persistentQueue.enabled: false` and/or `downstream.persistentQueue.enabled: false`.
 
 ### Tail-based sampling (traces only)

@@ -61,6 +61,12 @@ spec:
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+            {{- if and .Values.downstream.persistentQueue.enabled .Values.downstream.persistentQueue.pvc.enabled }}
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- end }}
           volumeMounts:
             - name: config
               mountPath: /etc/otel
@@ -68,6 +74,9 @@ spec:
             {{- if .Values.downstream.persistentQueue.enabled }}
             - name: queue
               mountPath: {{ .Values.downstream.persistentQueue.directory }}
+              {{- if .Values.downstream.persistentQueue.pvc.enabled }}
+              subPathExpr: $(POD_NAME)
+              {{- end }}
             {{- end }}
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
@@ -78,7 +87,12 @@ spec:
             name: {{ include "otel-collector.downstreamFullname" . }}
         {{- if .Values.downstream.persistentQueue.enabled }}
         - name: queue
+          {{- if .Values.downstream.persistentQueue.pvc.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.downstream.persistentQueue.pvc.existingClaim | default (printf "%s-queue" (include "otel-collector.downstreamFullname" .)) }}
+          {{- else }}
           emptyDir: {}
+          {{- end }}
         {{- end }}
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}

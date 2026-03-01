@@ -55,6 +55,12 @@ edge:
     enabled: true
     directory: /var/lib/otelcol/queue
     queueSize: 5000
+    # Optional: use a PVC so queue survives pod eviction. When set, each DaemonSet pod uses a subdir (pod name) on the same PVC; storage must be ReadWriteMany.
+    pvc:
+      enabled: false
+      existingClaim: ""   # use existing PVC name; leave empty to create one
+      size: 10Gi
+      storageClassName: "" # leave empty for default; use a class that supports ReadWriteMany for DaemonSet
 
   resources:
     limits:
@@ -118,6 +124,12 @@ downstream:
     enabled: true
     directory: /var/lib/otelcol/queue
     queueSize: 5000
+    # Optional: use a PVC so queue survives pod eviction. When set, each replica uses a subdir (pod name) on the same PVC; use ReadWriteMany for replicas > 1.
+    pvc:
+      enabled: false
+      existingClaim: ""   # use existing PVC name; leave empty to create one
+      size: 10Gi
+      storageClassName: "" # leave empty for default; use a class that supports ReadWriteMany if replicas > 1
 
   # Tail-based sampling for traces (keeps full trace before deciding; logs do not support tail-based sampling in otel)
   tailSampling:
