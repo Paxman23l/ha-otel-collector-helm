@@ -186,8 +186,62 @@ You should see trace (and/or metric/log) data in the logs.
 
 ### 4. Optional: test with Kafka and/or ClickHouse
 
-- **Kafka:** Install Kafka in the cluster (e.g. Bitnami Kafka Helm chart), create topics `telemetry.traces`, `telemetry.metrics`, `telemetry.logs`, then install the chart with `edge.queueBackend: "kafka"`, `downstream.useKafkaReceiver: true`, and brokers pointing at your Kafka service.
-- **ClickHouse:** Run ClickHouse (e.g. in-cluster or Docker) and set `downstream.clickhouse.enabled: true` and `downstream.clickhouse.endpoint` to the ClickHouse address. You can keep `debugExporter.enabled: true` to also see data in logs.
+**Kafka with Docker (apache/kafka:3.9.2)**
+
+A `docker-compose.kafka.yml` is included to run a single-node Kafka (KRaft) on your host:
+
+```bash
+cd otel-collector
+docker compose -f docker-compose.kafka.yml up -d
+```
+
+Then install or upgrade the chart so the edge and downstream use that broker. From **Docker Desktop Kubernetes**, pods can reach the host via `host.docker.internal`:
+
+```bash
+helm upgrade --install otel-collector . -n observability -f - <<EOF
+edge:
+  queueBackend: "kafka"
+  kafka:
+    brokers: ["host.docker.internal:9092"]
+downstream:
+  useKafkaReceiver: true
+  kafka:
+    brokers: ["host.docker.internal:9092"]
+  gcp:
+    enabled: false
+  clickhouse:
+    enabled: false
+  debugExporter:
+    enabled: true
+EOF
+```
+
+Topics `telemetry.traces`, `telemetry.metrics`, and `telemetry.logs` will be created automatically when the edge first publishes (if your Kafka allows auto-create). Otherwise create them manually.
+
+**Kafka in-cluster:** A standalone Helm chart in the repo uses the **Apache Kafka image** (`apache/kafka:3.9.2`). From the repo root:
+
+```bash
+helm install kafka ./kafka -n kafka --create-namespace
+```
+
+Broker address: `kafka-bootstrap.kafka.svc.cluster.local:9092`. Then install or upgrade the otel-collector chart with:
+
+```yaml
+edge:
+  queueBackend: "kafka"
+  kafka:
+    brokers: ["kafka-bootstrap.kafka.svc.cluster.local:9092"]
+downstream:
+  useKafkaReceiver: true
+  kafka:
+    brokers: ["kafka-bootstrap.kafka.svc.cluster.local:9092"]
+```
+
+Topics `telemetry.traces`, `telemetry.metrics`, and `telemetry.logs` will be auto-created when the edge first publishes (if Kafka allows). See the [kafka chart README](../kafka/README.md) for values and uninstall.
+
+Alternatively, install the Bitnami Kafka Helm chart (use a working image tag or registry override; the chart cannot be switched to `apache/kafka` without changing its templates, because Bitnami uses different configuration).
+
+**ClickHouse:** Run ClickHouse (e.g. in-cluster or Docker) and set `downstream.clickhouse.enabled: true` and `downstream.clickhouse.endpoint` to the ClickHouse address. You can keep `debugExporter.enabled: true` to also see data in logs.
 
 ## License
 
