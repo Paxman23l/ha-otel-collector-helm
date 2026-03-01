@@ -28,20 +28,20 @@ data:
           subject: {{ .Values.downstream.nats.logsSubject | quote }}
       {{- end }}
       {{- if .Values.downstream.useKafkaReceiver }}
-      # Kafka receiver (consumes from topics produced by edge when queueBackend is kafka)
-      kafka_traces:
+      # Kafka receivers (type "kafka" with named instances: kafka/traces, kafka/metrics, kafka/logs)
+      kafka/traces:
         protocol_version: {{ .Values.downstream.kafka.protocolVersion | quote }}
         brokers: {{ toJson .Values.downstream.kafka.brokers }}
         topic: {{ .Values.downstream.kafka.traces.topic | quote }}
         encoding: {{ .Values.downstream.kafka.traces.encoding | quote }}
         group_id: {{ .Values.downstream.kafka.groupId | quote }}
-      kafka_metrics:
+      kafka/metrics:
         protocol_version: {{ .Values.downstream.kafka.protocolVersion | quote }}
         brokers: {{ toJson .Values.downstream.kafka.brokers }}
         topic: {{ .Values.downstream.kafka.metrics.topic | quote }}
         encoding: {{ .Values.downstream.kafka.metrics.encoding | quote }}
         group_id: {{ .Values.downstream.kafka.groupId | quote }}
-      kafka_logs:
+      kafka/logs:
         protocol_version: {{ .Values.downstream.kafka.protocolVersion | quote }}
         brokers: {{ toJson .Values.downstream.kafka.brokers }}
         topic: {{ .Values.downstream.kafka.logs.topic | quote }}
@@ -98,13 +98,6 @@ data:
         {{- if .Values.downstream.gcp.credentialsFile }}
         credentials_file: {{ .Values.downstream.gcp.credentialsFile | quote }}
         {{- end }}
-        {{- if .Values.downstream.exporterRetry.enabled }}
-        retry_on_failure:
-          enabled: true
-          initial_interval: {{ .Values.downstream.exporterRetry.initialInterval | quote }}
-          max_interval: {{ .Values.downstream.exporterRetry.maxInterval | quote }}
-          max_elapsed_time: {{ .Values.downstream.exporterRetry.maxElapsedTime | quote }}
-        {{- end }}
         {{- if .Values.downstream.persistentQueue.enabled }}
         sending_queue:
           enabled: true
@@ -117,14 +110,6 @@ data:
       clickhouse:
         endpoint: {{ .Values.downstream.clickhouse.endpoint | quote }}
         database: {{ .Values.downstream.clickhouse.database | quote }}
-        create_schema: {{ .Values.downstream.clickhouse.createSchema }}
-        {{- if .Values.downstream.exporterRetry.enabled }}
-        retry_on_failure:
-          enabled: true
-          initial_interval: {{ .Values.downstream.exporterRetry.initialInterval | quote }}
-          max_interval: {{ .Values.downstream.exporterRetry.maxInterval | quote }}
-          max_elapsed_time: {{ .Values.downstream.exporterRetry.maxElapsedTime | quote }}
-        {{- end }}
         {{- if .Values.downstream.persistentQueue.enabled }}
         sending_queue:
           enabled: true
@@ -140,15 +125,15 @@ data:
       {{- end }}
       pipelines:
         traces:
-          receivers: [otlp{{ if .Values.downstream.useNatsReceiver }}, nats{{ end }}{{ if .Values.downstream.useKafkaReceiver }}, kafka_traces{{ end }}]
+          receivers: [otlp{{ if .Values.downstream.useNatsReceiver }}, nats{{ end }}{{ if .Values.downstream.useKafkaReceiver }}, kafka/traces{{ end }}]
           processors: [memory_limiter, batch{{ if .Values.downstream.tailSampling.enabled }}, tail_sampling{{ end }}]
           exporters: [{{ include "otel-collector.downstreamExporters" . }}]
         metrics:
-          receivers: [otlp{{ if .Values.downstream.useNatsReceiver }}, nats{{ end }}{{ if .Values.downstream.useKafkaReceiver }}, kafka_metrics{{ end }}]
+          receivers: [otlp{{ if .Values.downstream.useNatsReceiver }}, nats{{ end }}{{ if .Values.downstream.useKafkaReceiver }}, kafka/metrics{{ end }}]
           processors: [memory_limiter, batch]
           exporters: [{{ include "otel-collector.downstreamExporters" . }}]
         logs:
-          receivers: [otlp{{ if .Values.downstream.useNatsReceiver }}, nats{{ end }}{{ if .Values.downstream.useKafkaReceiver }}, kafka_logs{{ end }}]
+          receivers: [otlp{{ if .Values.downstream.useNatsReceiver }}, nats{{ end }}{{ if .Values.downstream.useKafkaReceiver }}, kafka/logs{{ end }}]
           processors: [memory_limiter, batch]
           exporters: [{{ include "otel-collector.downstreamExporters" . }}]
       telemetry:

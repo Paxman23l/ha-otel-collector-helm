@@ -115,14 +115,14 @@ downstream:
 
   # GCP (Cloud Trace, Cloud Monitoring, Cloud Logging)
   gcp:
-    enabled: true
+    enabled: false
     project: ""  # set or leave empty for default project (GKE workload identity)
     # Credentials: use workload identity on GKE; or set path to key JSON
     credentialsFile: ""
 
   # ClickHouse
   clickhouse:
-    enabled: true
+    enabled: false
     endpoint: "tcp://clickhouse.clickhouse.svc.cluster.local:9000"
     database: "otel"
     # Optional: create tables (requires DDL; set to false if DB is managed elsewhere)
@@ -137,7 +137,7 @@ downstream:
 
   # Debug exporter: logs telemetry to collector stdout (useful for local testing when GCP/ClickHouse are disabled)
   debugExporter:
-    enabled: false
+    enabled: true
     verbosity: basic  # basic, normal, detailed
 
   # Persistent queue: exporter queues backed by disk so data survives restarts (uses file_storage extension)

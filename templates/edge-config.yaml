@@ -54,7 +54,7 @@ data:
           queue_size: {{ .Values.edge.persistentQueue.queueSize }}
         {{- end }}
       {{- else if eq .Values.edge.queueBackend "kafka" }}
-      kafka_traces:
+      kafka/traces:
         protocol_version: {{ .Values.edge.kafka.protocolVersion | quote }}
         brokers: {{ toJson .Values.edge.kafka.brokers }}
         topic: {{ .Values.edge.kafka.traces.topic | quote }}
@@ -78,7 +78,7 @@ data:
           num_consumers: 4
           queue_size: {{ .Values.edge.persistentQueue.queueSize }}
         {{- end }}
-      kafka_metrics:
+      kafka/metrics:
         protocol_version: {{ .Values.edge.kafka.protocolVersion | quote }}
         brokers: {{ toJson .Values.edge.kafka.brokers }}
         topic: {{ .Values.edge.kafka.metrics.topic | quote }}
@@ -101,7 +101,7 @@ data:
           num_consumers: 4
           queue_size: {{ .Values.edge.persistentQueue.queueSize }}
         {{- end }}
-      kafka_logs:
+      kafka/logs:
         protocol_version: {{ .Values.edge.kafka.protocolVersion | quote }}
         brokers: {{ toJson .Values.edge.kafka.brokers }}
         topic: {{ .Values.edge.kafka.logs.topic | quote }}
