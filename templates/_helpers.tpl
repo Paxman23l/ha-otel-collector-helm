@@ -83,3 +83,12 @@ Edge exporter name: nats, kafka, or otlphttp based on queueBackend.
 {{- define "otel-collector.edgeLogsExporter" -}}
 {{- if eq .Values.edge.queueBackend "kafka" }}kafka_logs{{ else if eq .Values.edge.queueBackend "nats" }}nats{{ else }}otlphttp{{ end }}
 {{- end }}
+
+{{/* Downstream pipeline exporters: debug, googlecloud, clickhouse. At least one must be enabled. */}}
+{{- define "otel-collector.downstreamExporters" -}}
+{{- $parts := list -}}
+{{- if .Values.downstream.debugExporter.enabled -}}{{- $parts = append $parts "debug" -}}{{- end -}}
+{{- if .Values.downstream.gcp.enabled -}}{{- $parts = append $parts "googlecloud" -}}{{- end -}}
+{{- if .Values.downstream.clickhouse.enabled -}}{{- $parts = append $parts "clickhouse" -}}{{- end -}}
+{{- join ", " $parts -}}
+{{- end }}

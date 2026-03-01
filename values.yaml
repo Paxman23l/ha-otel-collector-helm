@@ -59,7 +59,7 @@ edge:
   # preStop sleep so pod is removed from Service endpoints before SIGTERM; gives collector time to drain
   preStopSleepSeconds: 15
 
-  # Persistent queue: exporter queue backed by disk so data survives restarts (uses filestorage extension)
+  # Persistent queue: exporter queue backed by disk so data survives restarts (uses file_storage extension)
   persistentQueue:
     enabled: true
     directory: /var/lib/otelcol/queue
@@ -135,7 +135,12 @@ downstream:
     maxInterval: 30s
     maxElapsedTime: 10m
 
-  # Persistent queue: exporter queues backed by disk so data survives restarts (uses filestorage extension)
+  # Debug exporter: logs telemetry to collector stdout (useful for local testing when GCP/ClickHouse are disabled)
+  debugExporter:
+    enabled: false
+    verbosity: basic  # basic, normal, detailed
+
+  # Persistent queue: exporter queues backed by disk so data survives restarts (uses file_storage extension)
   persistentQueue:
     enabled: true
     directory: /var/lib/otelcol/queue

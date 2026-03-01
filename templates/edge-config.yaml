@@ -19,7 +19,7 @@ data:
 
     {{- if .Values.edge.persistentQueue.enabled }}
     extensions:
-      filestorage:
+      file_storage:
         directory: {{ .Values.edge.persistentQueue.directory | quote }}
     {{- end }}
 
@@ -49,7 +49,7 @@ data:
         {{- if .Values.edge.persistentQueue.enabled }}
         sending_queue:
           enabled: true
-          storage: filestorage
+          storage: file_storage
           num_consumers: 4
           queue_size: {{ .Values.edge.persistentQueue.queueSize }}
         {{- end }}
@@ -74,7 +74,7 @@ data:
         {{- if .Values.edge.persistentQueue.enabled }}
         sending_queue:
           enabled: true
-          storage: filestorage
+          storage: file_storage
           num_consumers: 4
           queue_size: {{ .Values.edge.persistentQueue.queueSize }}
         {{- end }}
@@ -97,7 +97,7 @@ data:
         {{- if .Values.edge.persistentQueue.enabled }}
         sending_queue:
           enabled: true
-          storage: filestorage
+          storage: file_storage
           num_consumers: 4
           queue_size: {{ .Values.edge.persistentQueue.queueSize }}
         {{- end }}
@@ -120,7 +120,7 @@ data:
         {{- if .Values.edge.persistentQueue.enabled }}
         sending_queue:
           enabled: true
-          storage: filestorage
+          storage: file_storage
           num_consumers: 4
           queue_size: {{ .Values.edge.persistentQueue.queueSize }}
         {{- end }}
@@ -132,7 +132,7 @@ data:
         {{- if .Values.edge.persistentQueue.enabled }}
         sending_queue:
           enabled: true
-          storage: filestorage
+          storage: file_storage
           num_consumers: 4
           queue_size: {{ .Values.edge.persistentQueue.queueSize }}
         {{- end }}
@@ -140,7 +140,7 @@ data:
 
     service:
       {{- if .Values.edge.persistentQueue.enabled }}
-      extensions: [filestorage]
+      extensions: [file_storage]
       {{- end }}
       pipelines:
         traces:

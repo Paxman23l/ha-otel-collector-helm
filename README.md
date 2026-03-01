@@ -73,6 +73,7 @@ For node-local delivery, send to `localhost:4317` / `localhost:4318` when the ap
 | `downstream.kafka` | Brokers, topics, `groupId` for Kafka consumer. |
 | `downstream.gcp.enabled` | Export to GCP (default: true). |
 | `downstream.clickhouse.enabled` | Export to ClickHouse (default: true). |
+| `downstream.debugExporter.enabled` | Log telemetry to stdout (default: false). Use for local testing when GCP/ClickHouse are disabled. |
 | `serviceAccount.annotations` | For GKE Workload Identity. |
 
 ### Using Kafka
@@ -98,7 +99,7 @@ When using Kafka, the edge exporter sets **`partition_traces_by_id: true`** (con
 
 ### Persistent queue (data durability)
 
-By default, both edge and downstream use a **disk-backed exporter queue** (OpenTelemetry `filestorage` extension + `sending_queue.storage`). Data in the exporter queue is written to a volume so it can survive pod restarts and be retried after crash recovery.
+By default, both edge and downstream use a **disk-backed exporter queue** (OpenTelemetry `file_storage` extension + `sending_queue.storage`). Data in the exporter queue is written to a volume so it can survive pod restarts and be retried after crash recovery.
 
 - **Edge:** `edge.persistentQueue.enabled` (default: true), `edge.persistentQueue.directory` (default: `/var/lib/otelcol/queue`), `edge.persistentQueue.queueSize` (default: 5000). Uses an `emptyDir` volume by default; data survives container restarts but is lost if the pod is evicted. For durability across pod replacement, use Kafka between edge and downstream, or enable **`edge.persistentQueue.pvc.enabled`** with a **ReadWriteMany** storage class (each DaemonSet pod uses a subdir named by pod name).
 - **Downstream:** `downstream.persistentQueue.enabled`, `downstream.persistentQueue.directory`, `downstream.persistentQueue.queueSize` (same defaults). Same `emptyDir` behavior by default. Enable **`downstream.persistentQueue.pvc.enabled`** to use a PVC so the queue survives pod eviction; with replicas > 1 use a **ReadWriteMany** storage class (each replica uses a subdir by pod name).
@@ -131,6 +132,62 @@ The official OpenTelemetry Collector Contrib image does not yet include a NATS e
 
 1. Use a custom collector build that includes the NATS components when they are merged, or  
 2. Run a small bridge that receives OTLP and publishes to NATS, and another that subscribes from NATS and exposes OTLP to the downstream collector.
+
+## Testing locally
+
+Use a local Kubernetes cluster (e.g. **kind**, **minikube**, or Docker Desktop Kubernetes) and the chart’s **debug exporter** so you don’t need GCP or ClickHouse.
+
+### 1. Create a cluster and install the chart (debug only)
+
+```bash
+# Example: kind
+kind create cluster --name otel-test
+
+kubectl create namespace observability
+helm install otel-collector ./otel-collector -n observability -f - <<EOF
+edge:
+  queueBackend: "otlp"
+downstream:
+  gcp:
+    enabled: false
+  clickhouse:
+    enabled: false
+  debugExporter:
+    enabled: true
+    verbosity: basic
+  tailSampling:
+    enabled: false
+EOF
+```
+
+Wait until the edge DaemonSet and downstream Deployment are ready (`kubectl get pods -n observability -w`).
+
+### 2. Send OTLP to the edge
+
+Port-forward the edge OTLP HTTP port and send a test trace (or use any OTLP-capable app):
+
+```bash
+kubectl port-forward -n observability svc/otel-collector-edge 4318:4318 &
+# HTTP OTLP example (trace)
+curl -s -X POST http://localhost:4318/v1/traces \
+  -H "Content-Type: application/json" \
+  -d '{"resourceSpans":[{"resource":{},"scopeSpans":[{"scope":{},"spans":[{"traceId":"abc123","spanId":"def456","name":"test-span"}]}]}]}'
+```
+
+### 3. See telemetry in the downstream collector
+
+Telemetry is forwarded edge → downstream and printed by the **debug** exporter. Check the downstream pod logs:
+
+```bash
+kubectl logs -n observability -l app.kubernetes.io/component=downstream -f
+```
+
+You should see trace (and/or metric/log) data in the logs.
+
+### 4. Optional: test with Kafka and/or ClickHouse
+
+- **Kafka:** Install Kafka in the cluster (e.g. Bitnami Kafka Helm chart), create topics `telemetry.traces`, `telemetry.metrics`, `telemetry.logs`, then install the chart with `edge.queueBackend: "kafka"`, `downstream.useKafkaReceiver: true`, and brokers pointing at your Kafka service.
+- **ClickHouse:** Run ClickHouse (e.g. in-cluster or Docker) and set `downstream.clickhouse.enabled: true` and `downstream.clickhouse.endpoint` to the ClickHouse address. You can keep `debugExporter.enabled: true` to also see data in logs.
 
 ## License
 

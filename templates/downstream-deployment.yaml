@@ -17,6 +17,8 @@ spec:
       labels:
         {{- include "otel-collector.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: downstream
+      annotations:
+        checksum/config: {{ include (print .Template.BasePath "/downstream-config.yaml") . | sha256sum }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -43,13 +45,13 @@ spec:
               protocol: TCP
           livenessProbe:
             httpGet:
-              path: /
+              path: /metrics
               port: 8888
             initialDelaySeconds: 15
             periodSeconds: 20
           readinessProbe:
             httpGet:
-              path: /
+              path: /metrics
               port: 8888
             initialDelaySeconds: 5
             periodSeconds: 10
