@@ -49,6 +49,12 @@ data:
         group_id: {{ .Values.downstream.kafka.groupId | quote }}
       {{- end }}
 
+    {{- if .Values.downstream.persistentQueue.enabled }}
+    extensions:
+      filestorage:
+        directory: {{ .Values.downstream.persistentQueue.directory | quote }}
+    {{- end }}
+
     processors:
       batch:
         timeout: 10s
@@ -57,6 +63,29 @@ data:
         check_interval: 1s
         limit_mib: 1500
         spike_limit_mib: 512
+      {{- if .Values.downstream.tailSampling.enabled }}
+      tail_sampling:
+        decision_wait: {{ .Values.downstream.tailSampling.decisionWait | quote }}
+        num_traces: {{ .Values.downstream.tailSampling.numTraces }}
+        expected_new_traces_per_sec: {{ .Values.downstream.tailSampling.expectedNewTracesPerSec }}
+        policies:
+          {{- range .Values.downstream.tailSampling.policies }}
+          - name: {{ .name | quote }}
+            type: {{ .type | quote }}
+            {{- if eq .type "status_code" }}
+            status_code:
+              status_codes: {{ toJson .statusCode.statusCodes }}
+            {{- else if eq .type "latency" }}
+            latency:
+              threshold_ms: {{ .latency.thresholdMs }}
+            {{- else if eq .type "probabilistic" }}
+            probabilistic:
+              sampling_percentage: {{ .probabilistic.samplingPercentage }}
+            {{- else if eq .type "always_sample" }}
+            always_sample: {}
+            {{- end }}
+          {{- end }}
+      {{- end }}
 
     exporters:
       {{- if .Values.downstream.gcp.enabled }}
@@ -65,19 +94,36 @@ data:
         {{- if .Values.downstream.gcp.credentialsFile }}
         credentials_file: {{ .Values.downstream.gcp.credentialsFile | quote }}
         {{- end }}
+        {{- if .Values.downstream.persistentQueue.enabled }}
+        sending_queue:
+          enabled: true
+          storage: filestorage
+          num_consumers: 4
+          queue_size: {{ .Values.downstream.persistentQueue.queueSize }}
+        {{- end }}
       {{- end }}
       {{- if .Values.downstream.clickhouse.enabled }}
       clickhouse:
         endpoint: {{ .Values.downstream.clickhouse.endpoint | quote }}
         database: {{ .Values.downstream.clickhouse.database | quote }}
         create_schema: {{ .Values.downstream.clickhouse.createSchema }}
+        {{- if .Values.downstream.persistentQueue.enabled }}
+        sending_queue:
+          enabled: true
+          storage: filestorage
+          num_consumers: 4
+          queue_size: {{ .Values.downstream.persistentQueue.queueSize }}
+        {{- end }}
       {{- end }}
 
     service:
+      {{- if .Values.downstream.persistentQueue.enabled }}
+      extensions: [filestorage]
+      {{- end }}
       pipelines:
         traces:
           receivers: [otlp{{ if .Values.downstream.useNatsReceiver }}, nats{{ end }}{{ if .Values.downstream.useKafkaReceiver }}, kafka_traces{{ end }}]
-          processors: [memory_limiter, batch]
+          processors: [memory_limiter, batch{{ if .Values.downstream.tailSampling.enabled }}, tail_sampling{{ end }}]
           exporters: [{{ if and .Values.downstream.gcp.enabled .Values.downstream.clickhouse.enabled }}googlecloud, clickhouse{{ else }}{{ if .Values.downstream.gcp.enabled }}googlecloud{{ end }}{{ if .Values.downstream.clickhouse.enabled }}clickhouse{{ end }}{{ end }}]
         metrics:
           receivers: [otlp{{ if .Values.downstream.useNatsReceiver }}, nats{{ end }}{{ if .Values.downstream.useKafkaReceiver }}, kafka_metrics{{ end }}]

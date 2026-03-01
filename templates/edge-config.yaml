@@ -17,6 +17,12 @@ data:
           http:
             endpoint: 0.0.0.0:4318
 
+    {{- if .Values.edge.persistentQueue.enabled }}
+    extensions:
+      filestorage:
+        directory: {{ .Values.edge.persistentQueue.directory | quote }}
+    {{- end }}
+
     processors:
       batch:
         timeout: 5s
@@ -40,30 +46,69 @@ data:
         logs:
           subject: {{ .Values.edge.nats.logs.subject | quote }}
           encoding: {{ .Values.edge.nats.logs.encoding | quote }}
+        {{- if .Values.edge.persistentQueue.enabled }}
+        sending_queue:
+          enabled: true
+          storage: filestorage
+          num_consumers: 4
+          queue_size: {{ .Values.edge.persistentQueue.queueSize }}
+        {{- end }}
       {{- else if eq .Values.edge.queueBackend "kafka" }}
       kafka_traces:
         protocol_version: {{ .Values.edge.kafka.protocolVersion | quote }}
         brokers: {{ toJson .Values.edge.kafka.brokers }}
         topic: {{ .Values.edge.kafka.traces.topic | quote }}
         encoding: {{ .Values.edge.kafka.traces.encoding | quote }}
+        partition_traces_by_id: {{ .Values.edge.kafka.partitionTracesById }}
+        {{- if .Values.edge.persistentQueue.enabled }}
+        sending_queue:
+          enabled: true
+          storage: filestorage
+          num_consumers: 4
+          queue_size: {{ .Values.edge.persistentQueue.queueSize }}
+        {{- end }}
       kafka_metrics:
         protocol_version: {{ .Values.edge.kafka.protocolVersion | quote }}
         brokers: {{ toJson .Values.edge.kafka.brokers }}
         topic: {{ .Values.edge.kafka.metrics.topic | quote }}
         encoding: {{ .Values.edge.kafka.metrics.encoding | quote }}
+        {{- if .Values.edge.persistentQueue.enabled }}
+        sending_queue:
+          enabled: true
+          storage: filestorage
+          num_consumers: 4
+          queue_size: {{ .Values.edge.persistentQueue.queueSize }}
+        {{- end }}
       kafka_logs:
         protocol_version: {{ .Values.edge.kafka.protocolVersion | quote }}
         brokers: {{ toJson .Values.edge.kafka.brokers }}
         topic: {{ .Values.edge.kafka.logs.topic | quote }}
         encoding: {{ .Values.edge.kafka.logs.encoding | quote }}
+        {{- if .Values.edge.persistentQueue.enabled }}
+        sending_queue:
+          enabled: true
+          storage: filestorage
+          num_consumers: 4
+          queue_size: {{ .Values.edge.persistentQueue.queueSize }}
+        {{- end }}
       {{- else }}
       otlphttp:
         endpoint: {{ include "otel-collector.downstreamOtlpEndpoint" . | quote }}
         tls:
           insecure: true
+        {{- if .Values.edge.persistentQueue.enabled }}
+        sending_queue:
+          enabled: true
+          storage: filestorage
+          num_consumers: 4
+          queue_size: {{ .Values.edge.persistentQueue.queueSize }}
+        {{- end }}
       {{- end }}
 
     service:
+      {{- if .Values.edge.persistentQueue.enabled }}
+      extensions: [filestorage]
+      {{- end }}
       pipelines:
         traces:
           receivers: [otlp]

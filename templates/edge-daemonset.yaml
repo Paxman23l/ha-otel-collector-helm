@@ -67,10 +67,18 @@ spec:
             - name: config
               mountPath: /etc/otel
               readOnly: true
+            {{- if .Values.edge.persistentQueue.enabled }}
+            - name: queue
+              mountPath: {{ .Values.edge.persistentQueue.directory }}
+            {{- end }}
       volumes:
         - name: config
           configMap:
             name: {{ include "otel-collector.edgeFullname" . }}
+        {{- if .Values.edge.persistentQueue.enabled }}
+        - name: queue
+          emptyDir: {}
+        {{- end }}
       {{- with .Values.edge.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

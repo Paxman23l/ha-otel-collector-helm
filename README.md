@@ -94,6 +94,24 @@ downstream:
 
 Create the topics `telemetry.traces`, `telemetry.metrics`, `telemetry.logs` in Kafka (or enable auto-create).
 
+When using Kafka, the edge exporter sets **`partition_traces_by_id: true`** (config: `edge.kafka.partitionTracesById`, default true). Kafka then uses trace_id as the message key, so all spans of the same trace go to the same partition and thus to the same downstream consumer. That way tail-based sampling in the downstream sees full traces even with multiple replicas.
+
+### Persistent queue (data durability)
+
+By default, both edge and downstream use a **disk-backed exporter queue** (OpenTelemetry `filestorage` extension + `sending_queue.storage`). Data in the exporter queue is written to a volume so it can survive pod restarts and be retried after crash recovery.
+
+- **Edge:** `edge.persistentQueue.enabled` (default: true), `edge.persistentQueue.directory` (default: `/var/lib/otelcol/queue`), `edge.persistentQueue.queueSize` (default: 5000). Uses an `emptyDir` volume; data survives container restarts but is lost if the pod is evicted. For durability across pod replacement, use Kafka between edge and downstream.
+- **Downstream:** `downstream.persistentQueue.enabled`, `downstream.persistentQueue.directory`, `downstream.persistentQueue.queueSize` (same defaults). Same `emptyDir` behavior.
+- To disable: set `edge.persistentQueue.enabled: false` and/or `downstream.persistentQueue.enabled: false`.
+
+### Tail-based sampling (traces only)
+
+The downstream collector can run **tail-based sampling** on traces: it buffers spans by trace ID, waits for the trace to complete (or `decisionWait`), then applies policies and only exports traces that match (e.g. keep errors, keep slow, sample 10% of the rest). This reduces volume while keeping important traces.
+
+- **Config:** `downstream.tailSampling.enabled` (default: true), `downstream.tailSampling.decisionWait`, `numTraces`, `expectedNewTracesPerSec`, and `downstream.tailSampling.policies`. Default policies: keep traces with status ERROR, keep traces with duration ≥ 500ms, then 10% probabilistic.
+- **Full-trace guarantee:** With **Kafka** and `edge.kafka.partitionTracesById: true` (default), traces are partitioned by trace_id so each downstream replica receives complete traces for the partitions it consumes. With OTLP direct to multiple replicas, no such guarantee exists—use Kafka for correct tail-based sampling at scale.
+- **Logs:** The OpenTelemetry Collector’s `tail_sampling` processor supports **traces only**, not logs.
+
 ## NATS note
 
 The official OpenTelemetry Collector Contrib image does not yet include a NATS exporter or receiver (they are proposed). With `edge.queueBackend: "otlp"` or `"kafka"`, no NATS is required. To use NATS in the middle, you can:

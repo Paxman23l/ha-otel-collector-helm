@@ -31,6 +31,8 @@ edge:
     brokers:
       - "kafka.kafka.svc.cluster.local:9092"
     protocolVersion: "2.0.0"
+    # Partition traces by trace_id so all spans of a trace go to same Kafka partition → same downstream consumer (required for tail-based sampling)
+    partitionTracesById: true
     traces:
       topic: "telemetry.traces"
       encoding: "otlp_proto"
@@ -47,6 +49,12 @@ edge:
   terminationGracePeriodSeconds: 90
   # preStop sleep so pod is removed from Service endpoints before SIGTERM; gives collector time to drain
   preStopSleepSeconds: 15
+
+  # Persistent queue: exporter queue backed by disk so data survives restarts (uses filestorage extension)
+  persistentQueue:
+    enabled: true
+    directory: /var/lib/otelcol/queue
+    queueSize: 5000
 
   resources:
     limits:
@@ -104,6 +112,32 @@ downstream:
     database: "otel"
     # Optional: create tables (requires DDL; set to false if DB is managed elsewhere)
     createSchema: true
+
+  # Persistent queue: exporter queues backed by disk so data survives restarts (uses filestorage extension)
+  persistentQueue:
+    enabled: true
+    directory: /var/lib/otelcol/queue
+    queueSize: 5000
+
+  # Tail-based sampling for traces (keeps full trace before deciding; logs do not support tail-based sampling in otel)
+  tailSampling:
+    enabled: true
+    decisionWait: 10s
+    numTraces: 100000
+    expectedNewTracesPerSec: 1000
+    policies:
+      - name: keep-errors
+        type: status_code
+        statusCode:
+          statusCodes: [ERROR]
+      - name: keep-slow
+        type: latency
+        latency:
+          thresholdMs: 500
+      - name: sample-10pct
+        type: probabilistic
+        probabilistic:
+          samplingPercentage: 10
 
   resources:
     limits:
