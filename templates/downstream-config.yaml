@@ -94,6 +94,13 @@ data:
         {{- if .Values.downstream.gcp.credentialsFile }}
         credentials_file: {{ .Values.downstream.gcp.credentialsFile | quote }}
         {{- end }}
+        {{- if .Values.downstream.exporterRetry.enabled }}
+        retry_on_failure:
+          enabled: true
+          initial_interval: {{ .Values.downstream.exporterRetry.initialInterval | quote }}
+          max_interval: {{ .Values.downstream.exporterRetry.maxInterval | quote }}
+          max_elapsed_time: {{ .Values.downstream.exporterRetry.maxElapsedTime | quote }}
+        {{- end }}
         {{- if .Values.downstream.persistentQueue.enabled }}
         sending_queue:
           enabled: true
@@ -107,6 +114,13 @@ data:
         endpoint: {{ .Values.downstream.clickhouse.endpoint | quote }}
         database: {{ .Values.downstream.clickhouse.database | quote }}
         create_schema: {{ .Values.downstream.clickhouse.createSchema }}
+        {{- if .Values.downstream.exporterRetry.enabled }}
+        retry_on_failure:
+          enabled: true
+          initial_interval: {{ .Values.downstream.exporterRetry.initialInterval | quote }}
+          max_interval: {{ .Values.downstream.exporterRetry.maxInterval | quote }}
+          max_elapsed_time: {{ .Values.downstream.exporterRetry.maxElapsedTime | quote }}
+        {{- end }}
         {{- if .Values.downstream.persistentQueue.enabled }}
         sending_queue:
           enabled: true

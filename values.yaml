@@ -33,6 +33,15 @@ edge:
     protocolVersion: "2.0.0"
     # Partition traces by trace_id so all spans of a trace go to same Kafka partition → same downstream consumer (required for tail-based sampling)
     partitionTracesById: true
+    # Producer durability: require full replication before ack so data is durable once "sent"
+    producer:
+      requiredAcks: -1  # -1 = all (wait for in-sync replicas); use 1 for leader-only, 0 for none
+    # Retry failed Kafka produce with backoff (exporter-level)
+    retryOnFailure:
+      enabled: true
+      initialInterval: 5s
+      maxInterval: 30s
+      maxElapsedTime: 10m
     traces:
       topic: "telemetry.traces"
       encoding: "otlp_proto"
@@ -118,6 +127,13 @@ downstream:
     database: "otel"
     # Optional: create tables (requires DDL; set to false if DB is managed elsewhere)
     createSchema: true
+
+  # Retry failed exports to GCP/ClickHouse with backoff (improves durability on temporary backend failures)
+  exporterRetry:
+    enabled: true
+    initialInterval: 5s
+    maxInterval: 30s
+    maxElapsedTime: 10m
 
   # Persistent queue: exporter queues backed by disk so data survives restarts (uses filestorage extension)
   persistentQueue:

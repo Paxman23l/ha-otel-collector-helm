@@ -60,6 +60,17 @@ data:
         topic: {{ .Values.edge.kafka.traces.topic | quote }}
         encoding: {{ .Values.edge.kafka.traces.encoding | quote }}
         partition_traces_by_id: {{ .Values.edge.kafka.partitionTracesById }}
+        {{- if .Values.edge.kafka.producer }}
+        producer:
+          required_acks: {{ .Values.edge.kafka.producer.requiredAcks }}
+        {{- end }}
+        {{- if .Values.edge.kafka.retryOnFailure.enabled }}
+        retry_on_failure:
+          enabled: true
+          initial_interval: {{ .Values.edge.kafka.retryOnFailure.initialInterval | quote }}
+          max_interval: {{ .Values.edge.kafka.retryOnFailure.maxInterval | quote }}
+          max_elapsed_time: {{ .Values.edge.kafka.retryOnFailure.maxElapsedTime | quote }}
+        {{- end }}
         {{- if .Values.edge.persistentQueue.enabled }}
         sending_queue:
           enabled: true
@@ -72,6 +83,17 @@ data:
         brokers: {{ toJson .Values.edge.kafka.brokers }}
         topic: {{ .Values.edge.kafka.metrics.topic | quote }}
         encoding: {{ .Values.edge.kafka.metrics.encoding | quote }}
+        {{- if .Values.edge.kafka.producer }}
+        producer:
+          required_acks: {{ .Values.edge.kafka.producer.requiredAcks }}
+        {{- end }}
+        {{- if .Values.edge.kafka.retryOnFailure.enabled }}
+        retry_on_failure:
+          enabled: true
+          initial_interval: {{ .Values.edge.kafka.retryOnFailure.initialInterval | quote }}
+          max_interval: {{ .Values.edge.kafka.retryOnFailure.maxInterval | quote }}
+          max_elapsed_time: {{ .Values.edge.kafka.retryOnFailure.maxElapsedTime | quote }}
+        {{- end }}
         {{- if .Values.edge.persistentQueue.enabled }}
         sending_queue:
           enabled: true
@@ -84,6 +106,17 @@ data:
         brokers: {{ toJson .Values.edge.kafka.brokers }}
         topic: {{ .Values.edge.kafka.logs.topic | quote }}
         encoding: {{ .Values.edge.kafka.logs.encoding | quote }}
+        {{- if .Values.edge.kafka.producer }}
+        producer:
+          required_acks: {{ .Values.edge.kafka.producer.requiredAcks }}
+        {{- end }}
+        {{- if .Values.edge.kafka.retryOnFailure.enabled }}
+        retry_on_failure:
+          enabled: true
+          initial_interval: {{ .Values.edge.kafka.retryOnFailure.initialInterval | quote }}
+          max_interval: {{ .Values.edge.kafka.retryOnFailure.maxInterval | quote }}
+          max_elapsed_time: {{ .Values.edge.kafka.retryOnFailure.maxElapsedTime | quote }}
+        {{- end }}
         {{- if .Values.edge.persistentQueue.enabled }}
         sending_queue:
           enabled: true

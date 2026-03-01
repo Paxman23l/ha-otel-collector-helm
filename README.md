@@ -113,6 +113,18 @@ The downstream collector can run **tail-based sampling** on traces: it buffers s
 - **Full-trace guarantee:** With **Kafka** and `edge.kafka.partitionTracesById: true` (default), traces are partitioned by trace_id so each downstream replica receives complete traces for the partitions it consumes. With OTLP direct to multiple replicas, no such guarantee exists—use Kafka for correct tail-based sampling at scale.
 - **Logs:** The OpenTelemetry Collector’s `tail_sampling` processor supports **traces only**, not logs.
 
+## Data durability: remaining issues and mitigations
+
+| Issue | Mitigation |
+|-------|------------|
+| **Batch processor in-memory** (edge & downstream) | Data in the batch processor is lost on hard crash (OOM, kill -9, node loss). **Fix:** Rely on graceful shutdown (90s + preStop) for clean terminations; right-size memory; use Kafka so data is durable once produced. |
+| **Tail_sampling buffer** (downstream, traces) | Traces held in memory by tail_sampling are lost on crash (already consumed from Kafka). **Fix:** No disk option in the processor; minimize crashes and right-size `numTraces`/memory. Accept a small window of loss. |
+| **Kafka producer acks** | If Kafka producer doesn’t wait for replication, data can be lost on broker failover. **Fix:** Chart sets `producer.requiredAcks: -1` (all) by default. Configure Kafka with replication factor ≥ 2 and `min.insync.replicas` ≥ 1 (e.g. 2). |
+| **Kafka consumer offset** | If the receiver commits offsets before export, a crash loses consumed-but-not-exported data. **Fix:** Downstream uses persistent queue (and optional PVC) so export retries after restart; monitor consumer lag and export errors. |
+| **Exporter queue full** | Long GCP/ClickHouse outage can fill the sending queue. **Fix:** Increase `persistentQueue.queueSize` and PVC size; monitor queue metrics and backend health. |
+| **Edge queue lost on eviction** (no Kafka) | With OTLP only, edge queue is on emptyDir and is lost when the pod is evicted. **Fix:** Use Kafka so data is durable after produce, or enable `edge.persistentQueue.pvc.enabled` with a ReadWriteMany storage class. |
+| **Multiple replicas + PVC** | One PVC with replicas > 1 requires ReadWriteMany. **Fix:** Chart uses ReadWriteMany when replicas > 1 for the downstream PVC; use a storage class that supports it (e.g. NFS, EFS) or set `replicas: 1`. |
+
 ## NATS note
 
 The official OpenTelemetry Collector Contrib image does not yet include a NATS exporter or receiver (they are proposed). With `edge.queueBackend: "otlp"` or `"kafka"`, no NATS is required. To use NATS in the middle, you can:
