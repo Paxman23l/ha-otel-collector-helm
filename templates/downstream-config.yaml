@@ -28,7 +28,8 @@ data:
           subject: {{ .Values.downstream.nats.logsSubject | quote }}
       {{- end }}
       {{- if .Values.downstream.useKafkaReceiver }}
-      # Kafka receivers (type "kafka" with named instances: kafka/traces, kafka/metrics, kafka/logs)
+      # Kafka receivers (when auditLogsOnlyMode only kafka/logs is used)
+      {{- if not .Values.downstream.kafkaAuditLogsOnlyMode }}
       kafka/traces:
         protocol_version: {{ .Values.downstream.kafka.protocolVersion | quote }}
         brokers: {{ toJson .Values.downstream.kafka.brokers }}
@@ -41,6 +42,7 @@ data:
         topic: {{ .Values.downstream.kafka.metrics.topic | quote }}
         encoding: {{ .Values.downstream.kafka.metrics.encoding | quote }}
         group_id: {{ .Values.downstream.kafka.groupId | quote }}
+      {{- end }}
       kafka/logs:
         protocol_version: {{ .Values.downstream.kafka.protocolVersion | quote }}
         brokers: {{ toJson .Values.downstream.kafka.brokers }}
@@ -125,11 +127,11 @@ data:
       {{- end }}
       pipelines:
         traces:
-          receivers: [otlp{{ if .Values.downstream.useNatsReceiver }}, nats{{ end }}{{ if .Values.downstream.useKafkaReceiver }}, kafka/traces{{ end }}]
+          receivers: [otlp{{ if .Values.downstream.useNatsReceiver }}, nats{{ end }}{{ if and .Values.downstream.useKafkaReceiver (not .Values.downstream.kafkaAuditLogsOnlyMode) }}, kafka/traces{{ end }}]
           processors: [memory_limiter, batch{{ if .Values.downstream.tailSampling.enabled }}, tail_sampling{{ end }}]
           exporters: [{{ include "otel-collector.downstreamExporters" . }}]
         metrics:
-          receivers: [otlp{{ if .Values.downstream.useNatsReceiver }}, nats{{ end }}{{ if .Values.downstream.useKafkaReceiver }}, kafka/metrics{{ end }}]
+          receivers: [otlp{{ if .Values.downstream.useNatsReceiver }}, nats{{ end }}{{ if and .Values.downstream.useKafkaReceiver (not .Values.downstream.kafkaAuditLogsOnlyMode) }}, kafka/metrics{{ end }}]
           processors: [memory_limiter, batch]
           exporters: [{{ include "otel-collector.downstreamExporters" . }}]
         logs:

@@ -49,7 +49,7 @@ downstream:
 4. Install the chart:
 
 ```bash
-helm install otel-collector ./otel-collector -n observability -f my-values.yaml
+helm install otel-collector ./otel-collector -n observability --create-namespace -f my-values.yaml
 ```
 
 ## Sending telemetry to the edge
@@ -97,6 +97,26 @@ Create the topics `telemetry.traces`, `telemetry.metrics`, `telemetry.logs` in K
 
 When using Kafka, the edge exporter sets **`partition_traces_by_id: true`** (config: `edge.kafka.partitionTracesById`, default true). Kafka then uses trace_id as the message key, so all spans of the same trace go to the same partition and thus to the same downstream consumer. That way tail-based sampling in the downstream sees full traces even with multiple replicas.
 
+**Audit logs only via Kafka:** To send only logs with a specific attribute (e.g. type=audit) through Kafka and everything else (traces, metrics, other logs) directly to the downstream via OTLP, set:
+
+```yaml
+edge:
+  queueBackend: "kafka"
+  kafka:
+    brokers: ["kafka-bootstrap.kafka.svc.cluster.local:9092"]
+    auditLogsOnly: true
+    auditLogAttributeKey: "type"    # log attribute name
+    auditLogAttributeValue: "audit" # value that identifies audit logs
+
+downstream:
+  useKafkaReceiver: true
+  kafkaAuditLogsOnlyMode: true
+  kafka:
+    brokers: ["kafka-bootstrap.kafka.svc.cluster.local:9092"]
+```
+
+Only the `telemetry.logs` topic is used; traces and metrics go edge → OTLP → downstream. Ensure log records that should be treated as audit have the matching attribute (e.g. `attributes["type"] = "audit"`).
+
 ### Persistent queue (data durability)
 
 By default, both edge and downstream use a **disk-backed exporter queue** (OpenTelemetry `file_storage` extension + `sending_queue.storage`). Data in the exporter queue is written to a volume so it can survive pod restarts and be retried after crash recovery.
@@ -143,8 +163,9 @@ Use a local Kubernetes cluster (e.g. **kind**, **minikube**, or Docker Desktop K
 # Example: kind
 kind create cluster --name otel-test
 
-kubectl create namespace observability
-helm install otel-collector ./otel-collector -n observability -f - <<EOF
+# Chart creates the observability namespace when createNamespace: true (default).
+# Use --create-namespace so the namespace exists before the first install.
+helm install otel-collector ./otel-collector -n observability --create-namespace -f - <<EOF
 edge:
   queueBackend: "otlp"
 downstream:
@@ -198,7 +219,7 @@ docker compose -f docker-compose.kafka.yml up -d
 Then install or upgrade the chart so the edge and downstream use that broker. From **Docker Desktop Kubernetes**, pods can reach the host via `host.docker.internal`:
 
 ```bash
-helm upgrade --install otel-collector . -n observability -f - <<EOF
+helm upgrade --install otel-collector . -n observability --create-namespace -f - <<EOF
 edge:
   queueBackend: "kafka"
   kafka:
@@ -242,6 +263,123 @@ Topics `telemetry.traces`, `telemetry.metrics`, and `telemetry.logs` will be aut
 Alternatively, install the Bitnami Kafka Helm chart (use a working image tag or registry override; the chart cannot be switched to `apache/kafka` without changing its templates, because Bitnami uses different configuration).
 
 **ClickHouse:** Run ClickHouse (e.g. in-cluster or Docker) and set `downstream.clickhouse.enabled: true` and `downstream.clickhouse.endpoint` to the ClickHouse address. You can keep `debugExporter.enabled: true` to also see data in logs.
+
+## End-to-end test (all changes)
+
+Single flow to verify the chart: namespace creation, OTLP path, optional Kafka, and audit-logs-only mode. Run from the **repo root**. Use a local cluster (kind, minikube, or Docker Desktop K8s).
+
+### Option A: OTLP only (no Kafka)
+
+Chart creates the namespace when `createNamespace: true` (default).
+
+```bash
+# 1. Install (namespace is created by the chart)
+helm upgrade --install otel-collector ./otel-collector -n observability --create-namespace -f - <<EOF
+edge:
+  queueBackend: "otlp"
+downstream:
+  gcp:
+    enabled: false
+  clickhouse:
+    enabled: false
+  debugExporter:
+    enabled: true
+  tailSampling:
+    enabled: false
+EOF
+
+# 2. Wait for pods
+kubectl get pods -n observability -w
+# Ctrl+C when edge and downstream are Ready
+
+# 3. Port-forward and send telemetry
+kubectl port-forward -n observability svc/otel-collector-edge 4318:4318 &
+sleep 2
+
+# Trace
+curl -s -X POST http://localhost:4318/v1/traces -H "Content-Type: application/json" \
+  -d '{"resourceSpans":[{"resource":{},"scopeSpans":[{"scope":{},"spans":[{"traceId":"5b8efff798038103d269b633813fc60c","spanId":"eee19b7ec3c1b174","name":"test-span","kind":1,"startTimeUnixNano":"1544712660000000000","endTimeUnixNano":"1544712661000000000"}]}]}]}'
+
+# Metric
+curl -s -X POST http://localhost:4318/v1/metrics -H "Content-Type: application/json" \
+  -d '{"resourceMetrics":[{"resource":{},"scopeMetrics":[{"scope":{},"metrics":[{"name":"test_metric","unit":"1","sum":{"dataPoints":[{"asDouble":42,"startTimeUnixNano":"1544712660000000000","timeUnixNano":"1544712661000000000"}],"aggregationTemporality":2}]}]}]}'
+
+# Log (no audit attribute)
+curl -s -X POST http://localhost:4318/v1/logs -H "Content-Type: application/json" \
+  -d '{"resourceLogs":[{"resource":{},"scopeLogs":[{"scope":{},"logRecords":[{"timeUnixNano":"1544712661000000000","severityNumber":9,"severityText":"INFO","body":{"stringValue":"Regular log"}}]}]}]}'
+
+# 4. Confirm in downstream logs
+kubectl logs -n observability -l app.kubernetes.io/component=downstream -f --tail=100
+# You should see the trace, metric, and log. Ctrl+C to stop.
+```
+
+### Option B: Audit-logs-only Kafka
+
+Kafka only for logs with `type=audit`; traces, metrics, and other logs go edge → OTLP → downstream.
+
+```bash
+# 1. Start Kafka (pick one)
+# Docker (host):
+cd otel-collector && docker compose -f docker-compose.kafka.yml up -d && cd ..
+# Or in-cluster:
+helm upgrade --install kafka ./kafka -n kafka --create-namespace
+
+# 2. Install/upgrade otel-collector with audit-logs-only
+# Use host.docker.internal if Kafka is in Docker; use kafka-bootstrap.kafka.svc.cluster.local:9092 if Kafka is in-cluster.
+helm upgrade --install otel-collector ./otel-collector -n observability --create-namespace -f - <<EOF
+edge:
+  queueBackend: "kafka"
+  kafka:
+    brokers: ["host.docker.internal:9092"]
+    auditLogsOnly: true
+    auditLogAttributeKey: "type"
+    auditLogAttributeValue: "audit"
+downstream:
+  useKafkaReceiver: true
+  kafkaAuditLogsOnlyMode: true
+  kafka:
+    brokers: ["host.docker.internal:9092"]
+  gcp:
+    enabled: false
+  clickhouse:
+    enabled: false
+  debugExporter:
+    enabled: true
+EOF
+
+# 3. Wait for pods
+kubectl get pods -n observability -w
+# Ctrl+C when ready
+
+# 4. Port-forward and open downstream logs in another terminal
+kubectl port-forward -n observability svc/otel-collector-edge 4318:4318 &
+kubectl logs -n observability -l app.kubernetes.io/component=downstream -f --tail=50 &
+sleep 2
+
+# Non-audit log → goes edge → OTLP → downstream
+curl -s -X POST http://localhost:4318/v1/logs -H "Content-Type: application/json" \
+  -d '{"resourceLogs":[{"resource":{},"scopeLogs":[{"scope":{},"logRecords":[{"timeUnixNano":"1544712661000000000","severityNumber":9,"severityText":"INFO","body":{"stringValue":"Regular log"}}]}]}]}'
+
+# Audit log → goes edge → Kafka → downstream
+curl -s -X POST http://localhost:4318/v1/logs -H "Content-Type: application/json" \
+  -d '{"resourceLogs":[{"resource":{},"scopeLogs":[{"scope":{},"logRecords":[{"timeUnixNano":"1544712662000000000","severityNumber":9,"severityText":"INFO","body":{"stringValue":"Audit event"},"attributes":[{"key":"type","value":{"stringValue":"audit"}}]}]}]}]}'
+
+# Trace and metric → go edge → OTLP → downstream (no Kafka)
+curl -s -X POST http://localhost:4318/v1/traces -H "Content-Type: application/json" \
+  -d '{"resourceSpans":[{"resource":{},"scopeSpans":[{"scope":{},"spans":[{"traceId":"5b8efff798038103d269b633813fc60c","spanId":"eee19b7ec3c1b174","name":"test-span","kind":1,"startTimeUnixNano":"1544712660000000000","endTimeUnixNano":"1544712661000000000"}]}]}]}'
+```
+
+In the downstream log stream you should see: the regular log, the audit log, and the trace (all paths working).
+
+### Cleanup
+
+```bash
+helm uninstall otel-collector -n observability
+kubectl delete namespace observability
+# If you used in-cluster Kafka:
+helm uninstall kafka -n kafka
+kubectl delete namespace kafka
+```
 
 ## License
 

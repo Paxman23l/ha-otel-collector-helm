@@ -71,17 +71,17 @@ Downstream OTLP endpoint URL for edge collector (when not using NATS).
 Edge exporter name: nats, kafka, or otlphttp based on queueBackend.
 */}}
 {{- define "otel-collector.edgeExporterName" -}}
-{{- if eq .Values.edge.queueBackend "nats" }}nats{{ else if eq .Values.edge.queueBackend "kafka" }}kafka/traces{{ else }}otlphttp{{ end }}
+{{- if eq .Values.edge.queueBackend "nats" }}nats{{ else if and (eq .Values.edge.queueBackend "kafka") .Values.edge.kafka.auditLogsOnly }}otlphttp{{ else if eq .Values.edge.queueBackend "kafka" }}kafka/traces{{ else }}otlphttp{{ end }}
 {{- end }}
 
 {{- define "otel-collector.edgeTracesExporter" -}}
-{{- if eq .Values.edge.queueBackend "kafka" }}kafka/traces{{ else if eq .Values.edge.queueBackend "nats" }}nats{{ else }}otlphttp{{ end }}
+{{- if and (eq .Values.edge.queueBackend "kafka") .Values.edge.kafka.auditLogsOnly }}otlphttp{{ else if eq .Values.edge.queueBackend "kafka" }}kafka/traces{{ else if eq .Values.edge.queueBackend "nats" }}nats{{ else }}otlphttp{{ end }}
 {{- end }}
 {{- define "otel-collector.edgeMetricsExporter" -}}
-{{- if eq .Values.edge.queueBackend "kafka" }}kafka/metrics{{ else if eq .Values.edge.queueBackend "nats" }}nats{{ else }}otlphttp{{ end }}
+{{- if and (eq .Values.edge.queueBackend "kafka") .Values.edge.kafka.auditLogsOnly }}otlphttp{{ else if eq .Values.edge.queueBackend "kafka" }}kafka/metrics{{ else if eq .Values.edge.queueBackend "nats" }}nats{{ else }}otlphttp{{ end }}
 {{- end }}
 {{- define "otel-collector.edgeLogsExporter" -}}
-{{- if eq .Values.edge.queueBackend "kafka" }}kafka/logs{{ else if eq .Values.edge.queueBackend "nats" }}nats{{ else }}otlphttp{{ end }}
+{{- if and (eq .Values.edge.queueBackend "kafka") .Values.edge.kafka.auditLogsOnly }}otlphttp{{ else if eq .Values.edge.queueBackend "kafka" }}kafka/logs{{ else if eq .Values.edge.queueBackend "nats" }}nats{{ else }}otlphttp{{ end }}
 {{- end }}
 
 {{/* Downstream pipeline exporters: debug, googlecloud, clickhouse. At least one must be enabled. */}}

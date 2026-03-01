@@ -31,6 +31,20 @@ data:
         check_interval: 1s
         limit_mib: 400
         spike_limit_mib: 128
+      {{- if and (eq .Values.edge.queueBackend "kafka") .Values.edge.kafka.auditLogsOnly }}
+      # Keep only logs with attribute type=audit (drop others)
+      filter/audit:
+        error_mode: ignore
+        logs:
+          log_record:
+            - 'attributes["{{ .Values.edge.kafka.auditLogAttributeKey }}"] != "{{ .Values.edge.kafka.auditLogAttributeValue }}"'
+      # Keep only logs without type=audit (drop audit logs)
+      filter/not_audit:
+        error_mode: ignore
+        logs:
+          log_record:
+            - 'attributes["{{ .Values.edge.kafka.auditLogAttributeKey }}"] == "{{ .Values.edge.kafka.auditLogAttributeValue }}"'
+      {{- end }}
 
     exporters:
       {{- if eq .Values.edge.queueBackend "nats" }}
@@ -54,6 +68,43 @@ data:
           queue_size: {{ .Values.edge.persistentQueue.queueSize }}
         {{- end }}
       {{- else if eq .Values.edge.queueBackend "kafka" }}
+      {{- if .Values.edge.kafka.auditLogsOnly }}
+      # Audit-logs-only: traces/metrics/other logs go to downstream via OTLP; only audit logs go to Kafka
+      otlphttp:
+        endpoint: {{ include "otel-collector.downstreamOtlpEndpoint" . | quote }}
+        tls:
+          insecure: true
+        {{- if .Values.edge.persistentQueue.enabled }}
+        sending_queue:
+          enabled: true
+          storage: file_storage
+          num_consumers: 4
+          queue_size: {{ .Values.edge.persistentQueue.queueSize }}
+        {{- end }}
+      kafka/logs:
+        protocol_version: {{ .Values.edge.kafka.protocolVersion | quote }}
+        brokers: {{ toJson .Values.edge.kafka.brokers }}
+        topic: {{ .Values.edge.kafka.logs.topic | quote }}
+        encoding: {{ .Values.edge.kafka.logs.encoding | quote }}
+        {{- if .Values.edge.kafka.producer }}
+        producer:
+          required_acks: {{ .Values.edge.kafka.producer.requiredAcks }}
+        {{- end }}
+        {{- if .Values.edge.kafka.retryOnFailure.enabled }}
+        retry_on_failure:
+          enabled: true
+          initial_interval: {{ .Values.edge.kafka.retryOnFailure.initialInterval | quote }}
+          max_interval: {{ .Values.edge.kafka.retryOnFailure.maxInterval | quote }}
+          max_elapsed_time: {{ .Values.edge.kafka.retryOnFailure.maxElapsedTime | quote }}
+        {{- end }}
+        {{- if .Values.edge.persistentQueue.enabled }}
+        sending_queue:
+          enabled: true
+          storage: file_storage
+          num_consumers: 4
+          queue_size: {{ .Values.edge.persistentQueue.queueSize }}
+        {{- end }}
+      {{- else }}
       kafka/traces:
         protocol_version: {{ .Values.edge.kafka.protocolVersion | quote }}
         brokers: {{ toJson .Values.edge.kafka.brokers }}
@@ -124,6 +175,7 @@ data:
           num_consumers: 4
           queue_size: {{ .Values.edge.persistentQueue.queueSize }}
         {{- end }}
+      {{- end }}
       {{- else }}
       otlphttp:
         endpoint: {{ include "otel-collector.downstreamOtlpEndpoint" . | quote }}
@@ -151,10 +203,21 @@ data:
           receivers: [otlp]
           processors: [memory_limiter, batch]
           exporters: [{{ include "otel-collector.edgeMetricsExporter" . }}]
+        {{- if and (eq .Values.edge.queueBackend "kafka") .Values.edge.kafka.auditLogsOnly }}
+        logs/audit:
+          receivers: [otlp]
+          processors: [memory_limiter, filter/audit, batch]
+          exporters: [kafka/logs]
+        logs/other:
+          receivers: [otlp]
+          processors: [memory_limiter, filter/not_audit, batch]
+          exporters: [otlphttp]
+        {{- else }}
         logs:
           receivers: [otlp]
           processors: [memory_limiter, batch]
           exporters: [{{ include "otel-collector.edgeLogsExporter" . }}]
+        {{- end }}
       telemetry:
         logs:
           level: info

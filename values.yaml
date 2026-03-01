@@ -3,7 +3,10 @@
 nameOverride: ""
 fullnameOverride: ""
 
-# -- OTel Collector Contrib image (includes GCP, ClickHouse, etc.)
+# -- Create the release namespace if it does not exist (e.g. observability). Or use: helm install ... -n observability --create-namespace
+createNamespace: true
+
+# -- OTel Collector Contrib image
 image:
   repository: otel/opentelemetry-collector-contrib
   pullPolicy: IfNotPresent
@@ -31,7 +34,11 @@ edge:
     brokers:
       - "kafka.kafka.svc.cluster.local:9092"
     protocolVersion: "2.0.0"
-    # Partition traces by trace_id so all spans of a trace go to same Kafka partition → same downstream consumer (required for tail-based sampling)
+    # When true: only logs with attribute type=audit go to Kafka; traces, metrics, and other logs go directly to downstream via OTLP
+    auditLogsOnly: false
+    auditLogAttributeKey: "type"
+    auditLogAttributeValue: "audit"
+    # Partition traces by trace_id (only used when auditLogsOnly is false)
     partitionTracesById: true
     # Producer durability: require full replication before ack so data is durable once "sent"
     producer:
@@ -98,6 +105,8 @@ downstream:
 
   # Receive from Kafka (when edge.queueBackend is "kafka"). Uses kafka receiver from contrib.
   useKafkaReceiver: false
+  # When true and useKafkaReceiver true: only consume logs from Kafka (audit logs); traces and metrics from OTLP only
+  kafkaAuditLogsOnlyMode: false
   kafka:
     brokers:
       - "kafka.kafka.svc.cluster.local:9092"
