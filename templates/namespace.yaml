@@ -1,0 +1,9 @@
+{{- if .Values.createNamespace }}
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ include "otel-collector.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
