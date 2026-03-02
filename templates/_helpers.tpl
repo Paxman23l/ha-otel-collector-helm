@@ -68,6 +68,20 @@ Downstream OTLP endpoint URL for edge collector (when not using NATS).
 {{- end }}
 
 {{/*
+Downstream headless Service name (for loadbalancing exporter; resolves to pod IPs).
+*/}}
+{{- define "otel-collector.downstreamHeadlessServiceName" -}}
+{{- printf "%s-headless" (include "otel-collector.downstreamFullname" .) | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Downstream headless Service FQDN for DNS resolver (namespace.svc.cluster.local).
+*/}}
+{{- define "otel-collector.downstreamHeadlessHost" -}}
+{{- printf "%s.%s.svc.cluster.local" (include "otel-collector.downstreamHeadlessServiceName" .) .Release.Namespace }}
+{{- end }}
+
+{{/*
 Edge exporter name: nats, kafka, or otlphttp based on queueBackend.
 */}}
 {{- define "otel-collector.edgeExporterName" -}}
@@ -75,7 +89,7 @@ Edge exporter name: nats, kafka, or otlphttp based on queueBackend.
 {{- end }}
 
 {{- define "otel-collector.edgeTracesExporter" -}}
-{{- if and (eq .Values.edge.queueBackend "kafka") .Values.edge.kafka.auditLogsOnly }}otlphttp{{ else if eq .Values.edge.queueBackend "kafka" }}kafka/traces{{ else if eq .Values.edge.queueBackend "nats" }}nats{{ else }}otlphttp{{ end }}
+{{- if and (eq .Values.edge.queueBackend "otlp") .Values.edge.otlpLoadBalancing }}loadbalancing{{ else if and (eq .Values.edge.queueBackend "kafka") .Values.edge.kafka.auditLogsOnly }}otlphttp{{ else if eq .Values.edge.queueBackend "kafka" }}kafka/traces{{ else if eq .Values.edge.queueBackend "nats" }}nats{{ else }}otlphttp{{ end }}
 {{- end }}
 {{- define "otel-collector.edgeMetricsExporter" -}}
 {{- if and (eq .Values.edge.queueBackend "kafka") .Values.edge.kafka.auditLogsOnly }}otlphttp{{ else if eq .Values.edge.queueBackend "kafka" }}kafka/metrics{{ else if eq .Values.edge.queueBackend "nats" }}nats{{ else }}otlphttp{{ end }}

@@ -1,0 +1,28 @@
+{{- if and .Values.downstream.enabled .Values.edge.otlpLoadBalancing }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "otel-collector.downstreamHeadlessServiceName" . }}
+  labels:
+    {{- include "otel-collector.labels" . | nindent 4 }}
+    app.kubernetes.io/component: downstream
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    {{- include "otel-collector.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: downstream
+  ports:
+    - name: otlp-grpc
+      port: 4317
+      targetPort: otlp-grpc
+      protocol: TCP
+    - name: otlp-http
+      port: 4318
+      targetPort: otlp-http
+      protocol: TCP
+    - name: telemetry
+      port: 8888
+      targetPort: telemetry
+      protocol: TCP
+{{- end }}

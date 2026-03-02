@@ -47,7 +47,32 @@ data:
       {{- end }}
 
     exporters:
-      {{- if eq .Values.edge.queueBackend "nats" }}
+      {{- if and (eq .Values.edge.queueBackend "otlp") .Values.edge.otlpLoadBalancing }}
+      # Trace-ID routing so all spans of a trace hit the same downstream replica (enables tail-based sampling with multiple replicas). Metrics/logs use otlphttp (traceID only supported for traces).
+      loadbalancing:
+        routing_key: traceID
+        protocol:
+          otlp:
+            tls:
+              insecure: true
+        resolver:
+          dns:
+            hostname: {{ include "otel-collector.downstreamHeadlessHost" . | quote }}
+            port: "4317"
+            interval: {{ .Values.edge.otlpLoadBalancingResolver.interval | quote }}
+            timeout: {{ .Values.edge.otlpLoadBalancingResolver.timeout | quote }}
+      otlphttp:
+        endpoint: {{ include "otel-collector.downstreamOtlpEndpoint" . | quote }}
+        tls:
+          insecure: true
+        {{- if .Values.edge.persistentQueue.enabled }}
+        sending_queue:
+          enabled: true
+          storage: file_storage
+          num_consumers: 4
+          queue_size: {{ .Values.edge.persistentQueue.queueSize }}
+        {{- end }}
+      {{- else if eq .Values.edge.queueBackend "nats" }}
       # NATS exporter (proposed in contrib; use custom collector image if not yet available)
       nats:
         server_url: {{ .Values.edge.nats.url | quote }}
