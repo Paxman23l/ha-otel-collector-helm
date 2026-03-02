@@ -1,0 +1,240 @@
+# persistentQueue, PVC, and downstream replicas
+suite: queue, PVC, and replicas
+release:
+  name: test
+  namespace: observability
+templates:
+  - edge-config.yaml
+  - edge-daemonset.yaml
+  - edge-pvc.yaml
+  - downstream-config.yaml
+  - downstream-deployment.yaml
+  - downstream-pvc.yaml
+tests:
+  - it: downstream Deployment has spec.replicas from values
+    set:
+      downstream.enabled: true
+      downstream.replicas: 3
+    template: downstream-deployment.yaml
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: spec.replicas
+          value: 3
+
+  - it: downstream Deployment uses default replicas when not set
+    set:
+      downstream.enabled: true
+    template: downstream-deployment.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 2
+
+  - it: edge config has file_storage and sending_queue when persistentQueue enabled
+    set:
+      edge.enabled: true
+      edge.queueBackend: "otlp"
+      edge.persistentQueue.enabled: true
+      edge.persistentQueue.directory: "/var/lib/otelcol/queue"
+      edge.persistentQueue.queueSize: 5000
+      downstream.enabled: true
+    template: edge-config.yaml
+    documentIndex: 0
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "extensions:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "file_storage:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "sending_queue:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "storage: file_storage"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "queue_size: 5000"
+
+  - it: edge config has no file_storage when persistentQueue disabled
+    set:
+      edge.enabled: true
+      edge.queueBackend: "otlp"
+      edge.persistentQueue.enabled: false
+      downstream.enabled: true
+    template: edge-config.yaml
+    documentIndex: 0
+    asserts:
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "file_storage"
+
+  - it: downstream config has file_storage and sending_queue when persistentQueue enabled
+    set:
+      downstream.enabled: true
+      downstream.persistentQueue.enabled: true
+      downstream.persistentQueue.queueSize: 3000
+      downstream.gcp.enabled: true
+      downstream.gcp.project: "test-project"
+    template: downstream-config.yaml
+    documentIndex: 0
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "file_storage:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "sending_queue:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "queue_size: 3000"
+
+  - it: edge DaemonSet has queue volume when persistentQueue enabled
+    set:
+      edge.enabled: true
+      edge.persistentQueue.enabled: true
+      edge.persistentQueue.pvc.enabled: false
+      downstream.enabled: true
+    template: edge-daemonset.yaml
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: queue
+          any: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            emptyDir: {}
+          any: true
+
+  - it: downstream Deployment has queue volume when persistentQueue enabled
+    set:
+      downstream.enabled: true
+      downstream.persistentQueue.enabled: true
+      downstream.persistentQueue.pvc.enabled: false
+    template: downstream-deployment.yaml
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: queue
+          any: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            emptyDir: {}
+          any: true
+
+  - it: edge PVC renders when persistentQueue and pvc enabled and no existingClaim
+    set:
+      edge.enabled: true
+      edge.persistentQueue.enabled: true
+      edge.persistentQueue.pvc.enabled: true
+      edge.persistentQueue.pvc.existingClaim: ""
+      edge.persistentQueue.pvc.size: "10Gi"
+      downstream.enabled: true
+    template: edge-pvc.yaml
+    documentIndex: 0
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PersistentVolumeClaim
+      - equal:
+          path: metadata.name
+          value: test-otel-collector-edge-queue
+      - equal:
+          path: spec.accessModes[0]
+          value: ReadWriteMany
+      - equal:
+          path: spec.resources.requests.storage
+          value: "10Gi"
+
+  - it: edge PVC does not render when existingClaim is set
+    set:
+      edge.enabled: true
+      edge.persistentQueue.enabled: true
+      edge.persistentQueue.pvc.enabled: true
+      edge.persistentQueue.pvc.existingClaim: "my-claim"
+      downstream.enabled: true
+    template: edge-pvc.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: downstream PVC renders with ReadWriteMany when replicas > 1
+    set:
+      downstream.enabled: true
+      downstream.replicas: 2
+      downstream.persistentQueue.enabled: true
+      downstream.persistentQueue.pvc.enabled: true
+      downstream.persistentQueue.pvc.existingClaim: ""
+      downstream.persistentQueue.pvc.size: "20Gi"
+    template: downstream-pvc.yaml
+    documentIndex: 0
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: PersistentVolumeClaim
+      - equal:
+          path: metadata.name
+          value: test-otel-collector-downstream-queue
+      - equal:
+          path: spec.accessModes[0]
+          value: ReadWriteMany
+      - equal:
+          path: spec.resources.requests.storage
+          value: "20Gi"
+
+  - it: downstream PVC uses ReadWriteOnce when replicas is 1
+    set:
+      downstream.enabled: true
+      downstream.replicas: 1
+      downstream.persistentQueue.enabled: true
+      downstream.persistentQueue.pvc.enabled: true
+      downstream.persistentQueue.pvc.existingClaim: ""
+    template: downstream-pvc.yaml
+    documentIndex: 0
+    asserts:
+      - equal:
+          path: spec.accessModes[0]
+          value: ReadWriteOnce
+
+  - it: downstream Deployment uses PVC for queue when persistentQueue and pvc enabled
+    set:
+      downstream.enabled: true
+      downstream.persistentQueue.enabled: true
+      downstream.persistentQueue.pvc.enabled: true
+    template: downstream-deployment.yaml
+    documentIndex: 0
+    asserts:
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: queue
+          any: true
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            persistentVolumeClaim:
+              claimName: test-otel-collector-downstream-queue
+          any: true
+
+  - it: downstream PVC does not render when persistentQueue or pvc disabled
+    set:
+      downstream.enabled: true
+      downstream.persistentQueue.enabled: true
+      downstream.persistentQueue.pvc.enabled: false
+    template: downstream-pvc.yaml
+    asserts:
+      - hasDocuments:
+          count: 0

@@ -1,0 +1,106 @@
+# Kafka and audit-logs-only paths (edge + downstream)
+suite: Kafka and audit-logs-only
+release:
+  name: test
+  namespace: observability
+templates:
+  - edge-config.yaml
+  - downstream-config.yaml
+tests:
+  - it: edge uses Kafka exporters when queueBackend is kafka and not auditLogsOnly
+    set:
+      edge.enabled: true
+      edge.queueBackend: "kafka"
+      edge.kafka.auditLogsOnly: false
+      edge.kafka.brokers: ["kafka:9092"]
+      downstream.enabled: true
+    template: edge-config.yaml
+    documentIndex: 0
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "kafka/traces:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "kafka/metrics:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "kafka/logs:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "\\[kafka/traces\\]"
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "filter/audit"
+
+  - it: edge uses otlphttp and kafka/logs with audit filters when auditLogsOnly is true
+    set:
+      edge.enabled: true
+      edge.queueBackend: "kafka"
+      edge.kafka.auditLogsOnly: true
+      edge.kafka.auditLogAttributeKey: "type"
+      edge.kafka.auditLogAttributeValue: "audit"
+      edge.kafka.brokers: ["kafka:9092"]
+      downstream.enabled: true
+    template: edge-config.yaml
+    documentIndex: 0
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "otlphttp:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "kafka/logs:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "filter/audit:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "logs/audit:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "logs/other:"
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "kafka/traces:"
+
+  - it: downstream has Kafka receivers when useKafkaReceiver true and not auditLogsOnlyMode
+    set:
+      downstream.enabled: true
+      downstream.useKafkaReceiver: true
+      downstream.kafkaAuditLogsOnlyMode: false
+      downstream.kafka.brokers: ["kafka:9092"]
+    template: downstream-config.yaml
+    documentIndex: 0
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "kafka/traces:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "kafka/metrics:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "kafka/logs:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "receivers:.*kafka/traces"
+
+  - it: downstream has only kafka/logs receiver when kafkaAuditLogsOnlyMode is true
+    set:
+      downstream.enabled: true
+      downstream.useKafkaReceiver: true
+      downstream.kafkaAuditLogsOnlyMode: true
+      downstream.kafka.brokers: ["kafka:9092"]
+    template: downstream-config.yaml
+    documentIndex: 0
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "kafka/logs:"
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "kafka/traces:"
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: "kafka/metrics:"

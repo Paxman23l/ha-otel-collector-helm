@@ -1,0 +1,94 @@
+suite: default chart render
+release:
+  name: test
+  namespace: observability
+templates:
+  - edge-config.yaml
+  - downstream-config.yaml
+  - downstream-service.yaml
+  - edge-daemonset.yaml
+  - downstream-deployment.yaml
+tests:
+  - it: renders edge ConfigMap with OTLP receiver and otlphttp exporter by default
+    set:
+      edge.enabled: true
+      edge.queueBackend: "otlp"
+      downstream.enabled: true
+    template: edge-config.yaml
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: test-otel-collector-edge
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "receivers:\\s+otlp:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "exporters:\\s+otlphttp:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "pipelines:\\s+traces:"
+
+  - it: renders downstream ConfigMap with OTLP receiver and tail_sampling when enabled
+    set:
+      downstream.enabled: true
+      downstream.tailSampling.enabled: true
+    template: downstream-config.yaml
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: test-otel-collector-downstream
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "receivers:\\s+otlp:"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "tail_sampling:"
+
+  - it: renders downstream Service with ClusterIP
+    set:
+      downstream.enabled: true
+    template: downstream-service.yaml
+    documentIndex: 0
+    asserts:
+      - isKind:
+          of: Service
+      - equal:
+          path: metadata.name
+          value: test-otel-collector-downstream
+      - equal:
+          path: spec.type
+          value: ClusterIP
+      - equal:
+          path: spec.ports[0].port
+          value: 4317
+
+  - it: edge traces pipeline uses otlphttp when queueBackend is otlp and loadbalancing off
+    set:
+      edge.enabled: true
+      edge.queueBackend: "otlp"
+      edge.otlpLoadBalancing: false
+      downstream.enabled: true
+    template: edge-config.yaml
+    documentIndex: 0
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: otlphttp
+      - notMatchRegex:
+          path: data["config.yaml"]
+          pattern: loadbalancing
+
+  - it: does not render downstream ConfigMap when downstream is disabled
+    set:
+      downstream.enabled: false
+    template: downstream-config.yaml
+    asserts:
+      - hasDocuments:
+          count: 0
