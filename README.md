@@ -12,6 +12,7 @@ Runs OpenTelemetry Collector on GKE with:
 ```
 
 - **Default (`queueBackend: otlp`):** Edge sends OTLP to the downstream; no broker required.
+- **Trace-ID load balancing:** Set `edge.otlpLoadBalancing: true` (with `queueBackend: otlp`) to use the contrib **loadbalancing exporter** with `routing_key: traceID`. All spans of a trace are sent to the same downstream replica (via a headless Service), so **tail-based sampling** works correctly with multiple downstream replicas—no Kafka required.
 - **Kafka:** Set `edge.queueBackend: "kafka"` and `downstream.useKafkaReceiver: true`. Uses the standard contrib image.
 - **NATS:** Set `edge.queueBackend: "nats"`; NATS exporter/receiver are not yet in upstream contrib.
 
@@ -69,6 +70,7 @@ For node-local delivery, send to `localhost:4317` / `localhost:4318` when the ap
 | `edge.kafka` | Brokers, topics, encoding when `queueBackend` is `kafka`. |
 | `edge.nats` | URL and subjects when `queueBackend` is `nats`. |
 | `edge.downstreamEndpoint` | Override OTLP endpoint when `queueBackend` is `otlp`. |
+| `edge.otlpLoadBalancing` | When `true` and `queueBackend` is `otlp`, use loadbalancing exporter with trace-ID routing so tail-based sampling works with multiple downstream replicas (creates headless Service). |
 | `downstream.useKafkaReceiver` | Consume from Kafka (set `true` with `edge.queueBackend: kafka`). |
 | `downstream.kafka` | Brokers, topics, `groupId` for Kafka consumer. |
 | `downstream.gcp.enabled` | Export to GCP (default: true). |
@@ -205,6 +207,79 @@ kubectl logs -n observability -l app.kubernetes.io/component=downstream -f
 
 You should see trace (and/or metric/log) data in the logs.
 
+### 3b. Testing tail-based sampling
+
+With `downstream.tailSampling.enabled: true` (and optionally `edge.otlpLoadBalancing: true` for multiple replicas), the downstream keeps **errors**, **slow** traces (≥500ms), and **~10%** of the rest. To verify:
+
+1. **Port-forward** the edge and leave it running:
+   ```bash
+   kubectl port-forward -n observability svc/otel-collector-edge 4318:4318
+   ```
+
+2. **Send an error trace** (always kept by the `keep-errors` policy):
+   ```bash
+   curl -s -X POST http://localhost:4318/v1/traces -H "Content-Type: application/json" -d '{
+     "resourceSpans":[{
+       "resource":{},
+       "scopeSpans":[{
+         "scope":{},
+         "spans":[{
+           "traceId":"00000000000000000000000000000001",
+           "spanId":"0000000000000001",
+           "name":"error-span",
+           "kind":1,
+           "startTimeUnixNano":"1544712660000000000",
+           "endTimeUnixNano":"1544712661000000000",
+           "status":{"code":2,"message":"error"}
+         }]
+       }]
+     }]
+   }'
+   ```
+
+3. **Send a slow trace** (duration ≥500ms; always kept by `keep-slow`):
+   ```bash
+   curl -s -X POST http://localhost:4318/v1/traces -H "Content-Type: application/json" -d '{
+     "resourceSpans":[{
+       "resource":{},
+       "scopeSpans":[{
+         "scope":{},
+         "spans":[{
+           "traceId":"00000000000000000000000000000002",
+           "spanId":"0000000000000002",
+           "name":"slow-span",
+           "kind":1,
+           "startTimeUnixNano":"1544712660000000000",
+           "endTimeUnixNano":"1544712665000001000"
+         }]
+       }]
+     }]
+   }'
+   ```
+   (End - start = 5000ms, above the 500ms threshold.)
+
+4. **Send many normal traces** (only ~10% kept by `sample-10pct`):
+   ```bash
+   for i in $(seq 1 20); do
+     curl -s -X POST http://localhost:4318/v1/traces -H "Content-Type: application/json" -d "{
+       \"resourceSpans\":[{\"resource\":{},\"scopeSpans\":[{\"scope\":{},\"spans\":[{
+         \"traceId\":\"00000000000000000000000000000$(printf '%03d' $i)\",
+         \"spanId\":\"0000000000000001\",
+         \"name\":\"normal-span\",
+         \"kind\":1,
+         \"startTimeUnixNano\":\"1544712660000000000\",
+         \"endTimeUnixNano\":\"1544712661000000000\"
+       }]}]}]
+     }"
+   done
+   ```
+
+5. **Wait** at least `decisionWait` (default 10s), then check downstream logs:
+   ```bash
+   kubectl logs -n observability -l app.kubernetes.io/component=downstream -f --tail=200
+   ```
+   You should see the **error** trace and the **slow** trace every time. You should see only a small number of the **normal** traces (roughly 2 of 20 with 10% sampling). Exact count varies due to probabilistic sampling.
+
 ### 4. Optional: test with Kafka and/or ClickHouse
 
 **Kafka with Docker (apache/kafka:3.9.2)**
@@ -263,6 +338,39 @@ Topics `telemetry.traces`, `telemetry.metrics`, and `telemetry.logs` will be aut
 Alternatively, install the Bitnami Kafka Helm chart (use a working image tag or registry override; the chart cannot be switched to `apache/kafka` without changing its templates, because Bitnami uses different configuration).
 
 **ClickHouse:** Run ClickHouse (e.g. in-cluster or Docker) and set `downstream.clickhouse.enabled: true` and `downstream.clickhouse.endpoint` to the ClickHouse address. You can keep `debugExporter.enabled: true` to also see data in logs.
+
+## Chart tests
+
+The chart includes [helm-unittest](https://github.com/helm-unittest/helm-unittest) tests in `tests/`. They assert that the default render produces the expected ConfigMaps, Services, and pipelines, and that enabling `edge.otlpLoadBalancing` adds the headless Service and loadbalancing exporter.
+
+**Install the plugin** (once):
+
+```bash
+helm plugin install https://github.com/helm-unittest/helm-unittest --version 0.4.2 --verify=false
+```
+
+**Run tests** from the chart directory:
+
+```bash
+cd otel-collector
+helm unittest .
+```
+
+**Coverage:** The tests assert the main configuration branches:
+
+| Scenario | Covered |
+|----------|---------|
+| OTLP default (edge → otlphttp → downstream) | ✅ |
+| OTLP + loadbalancing (trace-ID routing, headless Service) | ✅ |
+| Kafka full (edge → kafka/traces, kafka/metrics, kafka/logs) | ✅ |
+| Kafka audit-logs-only (edge → otlphttp + kafka/logs, filters) | ✅ |
+| Downstream Kafka receivers (full and auditLogsOnlyMode) | ✅ |
+| Edge / downstream disabled (no render) | ✅ |
+| **persistentQueue** (file_storage, sending_queue, queue volume) | ✅ |
+| **PVC** (edge/downstream PVC render, existingClaim skip, ReadWriteMany/Once) | ✅ |
+| **Replicas** (downstream Deployment spec.replicas) | ✅ |
+
+Not covered by unit tests: NATS path, Deployment/DaemonSet resource fields, namespace/serviceaccount.
 
 ## End-to-end test (all changes)
 
