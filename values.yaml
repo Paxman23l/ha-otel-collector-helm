@@ -60,8 +60,13 @@ edge:
       encoding: "otlp_proto"
   # Downstream collector service (used when queueBackend is "otlp"). Leave empty to use internal service name.
   downstreamEndpoint: ""
+  # When true and queueBackend is "otlp": use loadbalancing exporter with routing_key traceID so all spans of a trace go to the same downstream replica (enables tail-based sampling with multiple replicas). Creates/uses a headless Service for downstream.
+  otlpLoadBalancing: false
+  otlpLoadBalancingResolver:
+    interval: 5s
+    timeout: 5s
 
-  # Graceful shutdown: time allowed to flush in-memory queue to Kafka/OTLP before pod is killed
+  # Graceful shutdown: time allowed to flush in-memory queue to Kafka/OTLP before pod is killed: time allowed to flush in-memory queue to Kafka/OTLP before pod is killed
   terminationGracePeriodSeconds: 90
   # preStop sleep so pod is removed from Service endpoints before SIGTERM; gives collector time to drain
   preStopSleepSeconds: 15
